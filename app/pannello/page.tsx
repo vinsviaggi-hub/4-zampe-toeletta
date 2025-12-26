@@ -19,6 +19,8 @@ type OrderRow = {
   note: string;
 };
 
+const AUTO_REFRESH_MS = 15000;
+
 function s(v: any) {
   return v === null || v === undefined ? "" : String(v);
 }
@@ -151,33 +153,24 @@ function buildWhatsAppUrl(phoneRaw: string, text: string) {
   const phone = phoneForWhatsApp(phoneRaw);
   if (!phone) return "";
 
-  // ✅ mobile: deep link (apre app)
+  // ✅ mobile: wa.me (apre app se installata)
   if (isMobileUA()) {
-    return `whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`;
+    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   }
 
-  // ✅ desktop: web
+  // ✅ desktop: web whatsapp
   const url = new URL("https://web.whatsapp.com/send");
   url.searchParams.set("phone", phone);
   url.searchParams.set("text", text);
   return url.toString();
 }
 
-function openWhatsAppAndReturn(waUrl: string) {
-  if (!waUrl) return;
-  const returnUrl = window.location.href;
-
-  if (isMobileUA()) {
-    // Vai su WhatsApp, poi quando torni al browser ti ritrovi già sul pannello
-    window.location.href = waUrl;
-    setTimeout(() => {
-      window.location.href = returnUrl;
-    }, 900);
-    return;
-  }
-
-  const w = window.open(waUrl, "_blank", "noreferrer");
-  if (!w) window.location.href = waUrl;
+function openWhatsApp(url: string) {
+  if (!url) return;
+  // tenta nuova scheda: se riesce tu rimani sul pannello
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  // fallback (popup bloccato): apre nello stesso tab
+  if (!w) window.location.assign(url);
 }
 
 export default function PannelloOrdiniPalaPizza() {
@@ -192,8 +185,10 @@ export default function PannelloOrdiniPalaPizza() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  async function load() {
-    setLoading(true);
+  async function load(opts?: { silent?: boolean }) {
+    const silent = !!opts?.silent;
+
+    if (!silent) setLoading(true);
     setErr("");
 
     try {
@@ -207,7 +202,7 @@ export default function PannelloOrdiniPalaPizza() {
       const data = await r.json().catch(() => null);
       if (!r.ok || !data?.ok) {
         setErr(data?.error || "Errore caricando ordini.");
-        setRows([]);
+        if (!silent) setRows([]);
         return;
       }
 
@@ -245,9 +240,9 @@ export default function PannelloOrdiniPalaPizza() {
       setRows(parsed);
     } catch (e: any) {
       setErr(e?.message || "Errore rete.");
-      setRows([]);
+      if (!opts?.silent) setRows([]);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }
 
@@ -294,20 +289,35 @@ export default function PannelloOrdiniPalaPizza() {
     const waText = buildStatusWaText(r, newStatus);
     const waHref = buildWhatsAppUrl(r.telefono, waText);
 
-    // ✅ prima apri WhatsApp, poi aggiorna stato
-    if (waHref) openWhatsAppAndReturn(waHref);
+    // ✅ apri WhatsApp subito
+    if (waHref) openWhatsApp(waHref);
+
+    // ✅ poi aggiorna stato
     await setStatus(r.id, newStatus);
+
+    // ✅ e fai un refresh “silenzioso” (così ti arrivano anche nuovi ordini)
+    load({ silent: true });
   }
 
+  // prima load
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ quando torni dalla app WhatsApp al browser, ricarica gli ordini
+  // ✅ auto-refresh (senza flicker)
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ quando torni al pannello (dopo WhatsApp), aggiorna
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") load();
+      if (document.visibilityState === "visible") load({ silent: true });
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
@@ -373,12 +383,12 @@ export default function PannelloOrdiniPalaPizza() {
                 </div>
                 <div>
                   <h1 className={styles.h1}>Pannello Ordini · Pala Pizza</h1>
-                  <p className={styles.sub}>Aggiorna stato + WhatsApp pronto (PC + telefono).</p>
+                  <p className={styles.sub}>Aggiornamento automatico attivo (PC + telefono).</p>
                 </div>
               </div>
 
               <div className={styles.actionsTop}>
-                <button className={styles.btn} onClick={load} disabled={loading}>
+                <button className={styles.btn} onClick={() => load()} disabled={loading}>
                   {loading ? "Aggiorno…" : "Aggiorna"}
                 </button>
                 <button className={`${styles.btn} ${styles.btnGhost}`} onClick={logout}>
