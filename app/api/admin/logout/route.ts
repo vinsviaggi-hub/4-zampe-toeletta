@@ -1,20 +1,31 @@
+// app/api/admin/logout/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getCookieName } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST() {
-  const res = NextResponse.json({ ok: true });
+async function clearAdminCookie() {
+  const cookieStore = await cookies();
 
-  res.cookies.set(getCookieName(), "", {
+  cookieStore.set({
+    name: getCookieName(),
+    value: "",
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // ✅ come da richiesta
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 0,
   });
-
-  return res;
 }
 
-export const dynamic = "force-dynamic";
+export async function POST() {
+  await clearAdminCookie();
+  return NextResponse.json({ ok: true });
+}
+
+export async function GET(req: Request) {
+  await clearAdminCookie();
+  return NextResponse.redirect(new URL("/pannello/login", req.url));
+}
