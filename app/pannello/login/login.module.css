@@ -1,146 +1,209 @@
 /* app/pannello/login/login.module.css */
-/* Login “pizzeria”: chiaro, caldo, leggibile */
 
-.wrap {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-
+.page {
+  min-height: 100vh;
+  padding: 18px;
   background:
-    radial-gradient(900px 500px at 15% 0%, rgba(255, 80, 40, 0.18), transparent 60%),
-    radial-gradient(900px 500px at 85% 15%, rgba(46, 204, 113, 0.14), transparent 60%),
-    radial-gradient(900px 500px at 50% 100%, rgba(255, 215, 0, 0.14), transparent 55%),
-    linear-gradient(180deg, #fff7ef 0%, #fff 60%, #fff5ea 100%);
+    radial-gradient(900px 500px at 20% 15%, rgba(59, 130, 246, 0.22), transparent 55%),
+    radial-gradient(900px 500px at 80% 20%, rgba(16, 185, 129, 0.14), transparent 55%),
+    radial-gradient(900px 700px at 50% 90%, rgba(99, 102, 241, 0.14), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #0a0f1a 40%, #0a0f1a 100%);
+  color: #e6eaf2;
 }
 
-.card {
-  width: 100%;
-  max-width: 430px;
-  border-radius: 18px;
-  padding: 22px 20px;
+.shell {
+  max-width: 980px;
+  margin: 0 auto;
+}
 
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(0, 0, 0, 0.10);
-  box-shadow: 0 22px 65px rgba(0, 0, 0, 0.14);
-
+.topBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.hero {
+  margin-top: 18px;
 }
 
 .brandRow {
   display: flex;
+  gap: 14px;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
-.logoDot {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: radial-gradient(circle at 30% 30%, #fff, #ffd27a 35%, #ff4d2e 75%);
-  box-shadow: 0 0 18px rgba(255, 80, 40, 0.25);
+.logoWrap {
+  width: 84px;
+  height: 84px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
 }
 
-.brand {
-  color: rgba(0, 0, 0, 0.85);
-  font-weight: 1000;
-  letter-spacing: 0.2px;
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.h1 {
+  margin: 0;
+  font-size: clamp(30px, 4.4vw, 46px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  opacity: 0.85;
   font-size: 14px;
-  line-height: 1.1;
 }
 
-.sub {
-  color: rgba(0, 0, 0, 0.55);
-  font-size: 12px;
-  line-height: 1.1;
-  font-weight: 800;
+.card {
+  margin-top: 12px;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
-.title {
-  margin: 8px 0 14px;
-  color: rgba(0, 0, 0, 0.92);
-  font-weight: 1100;
-  font-size: 24px;
-  letter-spacing: 0.2px;
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.small {
+  margin: 0;
+  opacity: 0.8;
+  font-size: 13px;
+}
+
+.alertOk,
+.alertErr {
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin: 10px 0 12px;
+  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.alertOk {
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.alertErr {
+  background: rgba(239, 68, 68, 0.14);
 }
 
 .form {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .label {
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 12px;
-  font-weight: 900;
+  display: grid;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .input {
   width: 100%;
   border-radius: 14px;
-  padding: 12px 12px;
-
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.14);
-  color: rgba(0, 0, 0, 0.92);
-
+  padding: 12px 14px;
+  font-size: 16px;
+  color: #eef2ff;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   outline: none;
-  font-weight: 900;
-  font-size: 15px;
+}
+
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .input:focus {
-  border-color: rgba(255, 80, 40, 0.55);
-  box-shadow: 0 0 0 4px rgba(255, 80, 40, 0.14);
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
 }
 
-.button {
-  margin-top: 6px;
-  width: 100%;
-  border: 0;
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primary,
+.secondary {
   border-radius: 14px;
   padding: 12px 14px;
+  font-weight: 800;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   cursor: pointer;
-
-  background: linear-gradient(90deg, #ff4d2e, #ffd45a);
-  color: #111;
-  font-weight: 1100;
-  letter-spacing: 0.2px;
+  font-size: 14px;
 }
 
-.button:disabled {
-  opacity: 0.7;
+.primary {
+  background: rgba(59, 130, 246, 0.22);
+}
+
+.secondary {
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 0.95;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
-.error {
-  padding: 10px 12px;
-  border-radius: 14px;
-
-  background: rgba(231, 76, 60, 0.12);
-  border: 1px solid rgba(231, 76, 60, 0.28);
-  color: rgba(120, 10, 10, 0.92);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.hint {
-  margin-top: 2px;
-  color: rgba(0, 0, 0, 0.55);
+.footerHint {
+  margin-top: 6px;
   font-size: 12px;
-  line-height: 1.35;
-  font-weight: 800;
+  opacity: 0.75;
 }
 
-.hint code {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.10);
-  padding: 2px 6px;
-  border-radius: 10px;
-  color: rgba(0, 0, 0, 0.80);
-  font-weight: 900;
+.bottomNote {
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+/* Mobile fine-tuning */
+@media (max-width: 520px) {
+  .brandRow {
+    align-items: flex-start;
+  }
+  .logoWrap {
+    width: 72px;
+    height: 72px;
+    border-radius: 16px;
+  }
 }
