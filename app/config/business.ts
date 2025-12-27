@@ -7,9 +7,9 @@ export type FeatureFlags = {
 };
 
 export type WhatsAppTemplates = {
-  confirmBooking?: string; // usa {name} {date} {time} {service}
-  cancelBooking?: string;  // usa {name} {date} {time} {service}
-  genericHello?: string;   // usa {name}
+  confirmBooking?: string; // {name} {date} {time} {service}
+  cancelBooking?: string;  // {name} {date} {time} {service}
+  genericHello?: string;   // {name}
 };
 
 export type BotTexts = {
@@ -23,111 +23,104 @@ export type PwaConfig = {
   name?: string;
   shortName?: string;
   description?: string;
-  themeColor?: string; // es "#0b1220"
+  themeColor?: string;
 };
 
 export type ThemeConfig = {
-  primary?: string; // ORO (barber)
-  danger?: string;  // ROSSO
-  bg?: string;
+  primary?: string; // main accent (es ORO)
+  danger?: string;  // rosso
+  accent?: string;  // extra (es blu/ciano o viola)
+  background?: string; // opzionale se vuoi forzare
+};
+
+export type CtaLabels = {
+  book?: string;       // bottone hero prenota
+  cancel?: string;     // bottone hero annulla
+  help?: string;       // bottone hero assistenza (toggle)
+  openChat?: string;   // bottone nella card chat
+  closeChat?: string;  // quando chat aperta
 };
 
 export type BusinessConfig = {
   slug: string;
 
-  // Hero (GIÀ USATI)
+  // Hero
   badgeTop: string;
   headline: string;
   subheadline: string;
 
-  // Info box (GIÀ USATI)
+  // Info box
   servicesShort: string;
   city: string;
   phone: string;
 
-  // ✅ Lista servizi (usata dal FastBookingForm)
+  // ✅ lista servizi per FastBookingForm (così non tocchi più il file)
   servicesList?: string[];
 
-  // Extra contatti (OPZIONALI)
-  address?: string;
-  whatsappPhone?: string; // es "+393331234567"
-  mapsUrl?: string;
-  instagramUrl?: string;
-
-  // CTA (OPZIONALI)
-  ctaPrimaryLabel?: string;
-  ctaSecondaryLabel?: string;
-  ctaOrdersLabel?: string;
-
-  // Orari (OPZIONALI - usati nella landing)
+  // Orari
   hoursTitle?: string;
   hoursLines?: string[];
 
-  // Pannello admin (OPZIONALI)
-  adminPanelTitle?: string;
-  adminPanelSubtitle?: string;
-  adminPanelFooter?: string;
+  // Labels CTA / testi UI
+  cta?: CtaLabels;
+  footerText?: string;     // es: "Powered by GalaxBot AI"
+  heroEmoji?: string;      // es: "💈" / "🍕" / "✨"
+  helpCardTitle?: string;  // es: "Assistenza"
+  helpCardSubtitle?: string;
 
-  // Testi bot/chat (OPZIONALI)
-  bot?: BotTexts;
+  // Extra contatti (opzionali)
+  address?: string;
+  whatsappPhone?: string;
+  mapsUrl?: string;
+  instagramUrl?: string;
 
-  // WhatsApp templates (OPZIONALI)
+  // WhatsApp templates (opzionale)
   whatsappTemplates?: WhatsAppTemplates;
 
-  // PWA (OPZIONALE)
+  // Bot/chat (opzionale)
+  bot?: BotTexts;
+
+  // PWA (opzionale)
   pwa?: PwaConfig;
 
-  // Feature flags (OPZIONALE)
+  // feature flags (opzionale)
   features?: FeatureFlags;
 
-  // Tema (OPZIONALE)
+  // theme (opzionale)
   theme?: ThemeConfig;
 };
 
 const BUSINESS: BusinessConfig = {
-  // ======= BASE (non rompe nulla) =======
   slug: "idee-per-la-testa",
 
   badgeTop: "GALAXBOT AI · BARBER SHOP",
   headline: "Idee per la Testa",
+  heroEmoji: "💈",
   subheadline:
     "Un assistente virtuale che gestisce richieste, prenotazioni e cancellazioni per il tuo barber shop, 24 ore su 24.",
 
   servicesShort: "Taglio, barba, sfumature, styling, bimbi",
-  city: "Castelnuovo Vomano (TE)",
-  phone: "333 123 4567",
-
-  // ✅ Lista completa per il form (così non tocchi più FastBookingForm)
   servicesList: ["Taglio uomo", "Barba", "Taglio + barba", "Sfumatura", "Bimbo", "Styling"],
 
-  // ======= EXTRA (puoi lasciarli vuoti) =======
-  address: "",
-  whatsappPhone: "", // es "+393331234567"
-  mapsUrl: "",
-  instagramUrl: "",
-
-  ctaPrimaryLabel: "Prenota",
-  ctaSecondaryLabel: "Contatta",
-  ctaOrdersLabel: "Ordina",
+  city: "Castelnuovo Vomano (TE)",
+  phone: "333 123 4567",
 
   hoursTitle: "Orari di apertura",
   hoursLines: ["Lunedì–Sabato: 8:30–12:30 e 15:00–20:00", "Domenica: chiuso"],
 
-  adminPanelTitle: "Prenotazioni",
-  adminPanelSubtitle:
-    "Pannello prenotazioni: vedi Nome, Telefono, Data, Ora, Servizio e aggiorni lo stato in un tap.",
-  adminPanelFooter: "GalaxBot AI • Pannello prenotazioni",
-
-  bot: {
-    greeting:
-      "Ciao! Sono l’assistente virtuale. Posso darti info su orari, prezzi, servizi e aiutarti a prenotare.",
-    bookingGuide:
-      "Per prenotare, dimmi: nome, servizio, giorno e orario preferito.",
-    cancelGuide:
-      "Per cancellare, dimmi nome e data/ora della prenotazione (se le conosci).",
-    fallback:
-      "Ok! Dimmi se ti serve: info, prenotazione o cancellazione.",
+  cta: {
+    book: "Prenota ora",
+    cancel: "Annulla",
+    help: "Assistenza",
+    openChat: "Apri chat",
+    closeChat: "Nascondi",
   },
+
+  helpCardTitle: "Assistenza",
+  helpCardSubtitle:
+    "Domande su servizi, orari o info generali. Per prenotare usa sempre il box “Prenota adesso”.",
+
+  footerText: "Powered by GalaxBot AI",
 
   whatsappTemplates: {
     genericHello: "Ciao {name}!",
@@ -150,12 +143,18 @@ const BUSINESS: BusinessConfig = {
     enableOpenAIChat: true,
   },
 
-  // ✅ TEMA BARBIERE: ORO + ROSSO
+  // ✅ tema barbiere
   theme: {
     primary: "#D4AF37", // ORO
     danger: "#EF4444",  // ROSSO
-    bg: "#ffffff",
+    accent: "#38BDF8",  // CIANO (facoltativo)
   },
+
+  // opzionali
+  address: "",
+  whatsappPhone: "",
+  mapsUrl: "",
+  instagramUrl: "",
 };
 
 export function getBusinessConfig(): BusinessConfig {
