@@ -46,6 +46,20 @@ function safeTel(t?: string) {
   return String(t || "").replace(/[^\d]/g, "");
 }
 
+// ✅ normalizza numero per WhatsApp (aggiunge 39 se serve)
+function normalizeWaPhone(raw?: string) {
+  const p = safeTel(raw);
+  if (!p) return "";
+
+  // 0039... -> 39...
+  if (p.startsWith("00")) return p.slice(2);
+
+  // IT senza prefisso (10 cifre) -> 39 + numero
+  if (p.length === 10 && !p.startsWith("39")) return `39${p}`;
+
+  return p;
+}
+
 function toITDate(iso?: string) {
   const s = String(iso || "").trim();
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
@@ -184,7 +198,7 @@ export default function PannelloAdmin() {
 
   // ✅ url sempre diverso (t=...) → riduce riuso “bozza” WhatsApp
   function waLink(phone: string, text: string) {
-    const p = safeTel(phone);
+    const p = normalizeWaPhone(phone);
     const msg = encodeURIComponent(text);
     const t = Date.now();
     return `https://api.whatsapp.com/send?phone=${p}&text=${msg}&t=${t}`;
@@ -363,14 +377,15 @@ export default function PannelloAdmin() {
     }
   };
 
+  // ✅ FIX pagina bianca: niente window.open → uso stesso tab
   function openWhatsApp(phone: string, message: string) {
-    const p = safeTel(phone);
+    const p = normalizeWaPhone(phone);
     if (!p) {
       showToast("err", "Telefono mancante: non posso aprire WhatsApp.");
       return;
     }
     const url = waLink(p, message);
-    window.open(url, `wa_${Date.now()}`, "noopener,noreferrer");
+    window.location.href = url;
   }
 
   const confirmWhatsApp = (r: AdminRow) => {
