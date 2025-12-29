@@ -1,6 +1,7 @@
 // app/api/admin/login/route.ts
 import { NextResponse } from "next/server";
-import { getCookieName, makeSessionToken } from "@/lib/adminAuth";
+import { getCookieName } from "@/lib/adminAuth";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,42 +14,58 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
+function getEnv(name: string) {
+  return (process.env[name] ?? "").trim();
+}
+
+function safeEqual(a: string, b: string) {
+  // evita timing attacks (anche se qui è un pannello semplice)
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (aa.length !== bb.length) return false;
+  return crypto.timingSafeEqual(aa, bb);
+}
+
 export async function POST(req: Request) {
   try {
+    const ADMIN_PASSWORD = getEnv("ADMIN_PASSWORD");
+    const ADMIN_SESSION_SECRET = getEnv("ADMIN_SESSION_SECRET");
+
+    if (!ADMIN_PASSWORD) {
+      return jsonNoStore({ ok: false, error: "ADMIN_PASSWORD mancante nelle env." }, { status: 500 });
+    }
+    if (!ADMIN_SESSION_SECRET) {
+      return jsonNoStore({ ok: false, error: "ADMIN_SESSION_SECRET mancante nelle env." }, { status: 500 });
+    }
+
     const body = await req.json().catch(() => null);
     const password = String(body?.password ?? "").trim();
 
-    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-    const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "";
-
-    if (!ADMIN_PASSWORD || !ADMIN_SESSION_SECRET) {
-      return jsonNoStore(
-        { ok: false, error: "ADMIN_PASSWORD o ADMIN_SESSION_SECRET mancanti" },
-        { status: 500 }
-      );
+    if (!password) {
+      return jsonNoStore({ ok: false, error: "Password mancante." }, { status: 400 });
     }
 
-    if (!password || password !== ADMIN_PASSWORD) {
-      return jsonNoStore({ ok: false, error: "Password errata" }, { status: 401 });
+    if (!safeEqual(password, ADMIN_PASSWORD)) {
+      return jsonNoStore({ ok: false, error: "Password errata." }, { status: 401 });
     }
 
-    const session = makeSessionToken(ADMIN_SESSION_SECRET);
+    const cookieName = getCookieName();
 
-    const res = jsonNoStore({ ok: true });
+    const res = jsonNoStore({ ok: true, loggedIn: true }, { status: 200 });
 
-    res.cookies.set(getCookieName(), session, {
+    // cookie session: contiene esattamente ADMIN_SESSION_SECRET
+    res.cookies.set({
+      name: cookieName,
+      value: ADMIN_SESSION_SECRET,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 giorni
+      maxAge: 60 * 60 * 24 * 30, // 30 giorni
     });
 
     return res;
   } catch (err: any) {
-    return jsonNoStore(
-      { ok: false, error: "Errore server /api/admin/login", details: err?.message ?? String(err) },
-      { status: 500 }
-    );
+    return jsonNoStore({ ok: false, error: `Errore interno: ${String(err?.message || err)}` }, { status: 500 });
   }
 }

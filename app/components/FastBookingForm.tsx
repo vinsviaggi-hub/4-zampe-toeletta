@@ -1,19 +1,15 @@
-// app/components/FastBookingForm.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { getBusinessConfig } from "@/app/config/business";
 
-type AvailabilityOk = { ok: true; freeSlots: string[] };
-type AvailabilityErr = { ok: false; error: string };
+type AvailabilityOk = { ok: true; freeSlots: string[]; date?: string };
+type AvailabilityErr = { ok: false; error: string; details?: any };
 type AvailabilityResponse = AvailabilityOk | AvailabilityErr;
 
 type CreateOk = { ok: true; message?: string };
-type CreateErr = { ok: false; error: string; conflict?: boolean };
+type CreateErr = { ok: false; error: string; conflict?: boolean; details?: any };
 type CreateResponse = CreateOk | CreateErr;
-
-// ✅ fallback: se non definisci servicesList nel business.ts, usa questi
-const SERVICES_FALLBACK = ["Taglio uomo", "Barba", "Taglio + barba", "Sfumatura", "Bimbo", "Styling"];
 
 function toISODate(d: Date) {
   const y = d.getFullYear();
@@ -23,7 +19,6 @@ function toISODate(d: Date) {
 }
 
 function prettyDate(iso: string) {
-  // iso: YYYY-MM-DD -> DD/MM/YYYY
   if (!iso || iso.length !== 10) return iso;
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
@@ -39,7 +34,7 @@ function hexToRgb(hex?: string) {
 }
 function rgba(hex: string, a: number) {
   const c = hexToRgb(hex);
-  if (!c) return `rgba(212,175,55,${a})`; // gold fallback
+  if (!c) return `rgba(212,175,55,${a})`;
   return `rgba(${c.r},${c.g},${c.b},${a})`;
 }
 
@@ -52,18 +47,24 @@ export default function FastBookingForm() {
     }
   }, []);
 
-  // ✅ servizi dal config (se presenti) con fallback
-  const servicesList: string[] =
-    Array.isArray(biz?.servicesList) && biz.servicesList.length ? biz.servicesList : SERVICES_FALLBACK;
+  const SERVICES: string[] =
+    Array.isArray(biz?.servicesList) && biz.servicesList.length > 0
+      ? biz.servicesList
+      : ["Bagno", "Tosatura", "Taglio + bagno", "Unghie", "Pulizia orecchie"];
 
-  // 🎨 tema coerente con landing (oro/rosso)
-  const gold = biz?.theme?.primary || "#D4AF37";
-  const red = biz?.theme?.danger || "#EF4444";
+  // Palette (non cambiamo la pagina, solo leggibilità del form)
+  const gold = "#D4AF37";
+  const danger = biz?.theme?.danger || "#EF4444";
+  const accent = biz?.theme?.accent || "#38BDF8";
 
   const todayISO = useMemo(() => toISODate(new Date()), []);
-  const [name, setName] = useState("");
+  const [dogName, setDogName] = useState("");
+  const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
-  const [service, setService] = useState(servicesList[0] || SERVICES_FALLBACK[0]);
+  const [taglia, setTaglia] = useState<"Piccola" | "Media" | "Grande">("Media");
+  const [pelo, setPelo] = useState<"Corto" | "Medio" | "Lungo">("Corto");
+
+  const [service, setService] = useState(SERVICES[0] || "");
   const [dateISO, setDateISO] = useState(todayISO);
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -76,6 +77,26 @@ export default function FastBookingForm() {
   const [resultMsg, setResultMsg] = useState<string>("");
   const [resultType, setResultType] = useState<"ok" | "warn" | "err" | "">("");
 
+  async function fetchAvailability(date: string) {
+    // prova POST, se 405 ripiega su GET (così funziona sia con route POST che GET)
+    try {
+      const res = await fetch("/api/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+
+      if (res.status === 405) throw new Error("METHOD_NOT_ALLOWED");
+
+      const data = (await res.json().catch(() => null)) as AvailabilityResponse | null;
+      return { res, data };
+    } catch (e: any) {
+      const res = await fetch(`/api/availability?date=${encodeURIComponent(date)}`, { method: "GET" });
+      const data = (await res.json().catch(() => null)) as AvailabilityResponse | null;
+      return { res, data };
+    }
+  }
+
   async function loadAvailability(nextDateISO: string) {
     setLoadingSlots(true);
     setSlots([]);
@@ -83,13 +104,7 @@ export default function FastBookingForm() {
     setSlotsMsg("");
 
     try {
-      const res = await fetch("/api/availability", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: nextDateISO }),
-      });
-
-      const data = (await res.json().catch(() => null)) as AvailabilityResponse | null;
+      const { data } = await fetchAvailability(nextDateISO);
 
       if (!data || typeof data !== "object" || !("ok" in data)) {
         setSlotsMsg("Risposta non valida dal server (availability).");
@@ -108,7 +123,7 @@ export default function FastBookingForm() {
         setSlotsMsg("Nessun orario disponibile per questa data.");
       } else {
         setSlotsMsg("");
-        setTime(free[0]); // seleziona il primo automaticamente
+        setTime(free[0]);
       }
     } catch {
       setSlotsMsg("Errore di rete (availability).");
@@ -127,12 +142,13 @@ export default function FastBookingForm() {
     setResultMsg("");
     setResultType("");
 
-    const n = name.trim();
+    const dog = dogName.trim();
+    const owner = ownerName.trim();
     const p = phone.trim();
 
-    if (!n || !p || !service || !dateISO || !time) {
+    if (!dog || !owner || !p || !taglia || !pelo || !service || !dateISO || !time) {
       setResultType("warn");
-      setResultMsg("Compila tutti i campi obbligatori (nome, telefono, servizio, data, ora).");
+      setResultMsg("Compila tutti i campi obbligatori (cane, padrone, telefono, taglia, pelo, servizio, data, ora).");
       return;
     }
 
@@ -143,8 +159,12 @@ export default function FastBookingForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create_booking",
-          name: n,
+          ownerName: owner,
+          name: owner, // compatibilità
           phone: p,
+          dogName: dog,
+          taglia,
+          pelo,
           service,
           date: dateISO,
           time,
@@ -163,18 +183,19 @@ export default function FastBookingForm() {
       if (!data.ok) {
         setResultType(data.conflict ? "warn" : "err");
         setResultMsg(data.error || "Errore durante la prenotazione.");
-        if (data.conflict) {
-          await loadAvailability(dateISO);
-        }
+        if (data.conflict) await loadAvailability(dateISO);
         return;
       }
 
       setResultType("ok");
-      setResultMsg("✅ Prenotazione inviata! Ti aspettiamo in barberia.");
+      setResultMsg("✅ Prenotazione inviata! Ti aspettiamo 🐾");
 
-      setName("");
+      setDogName("");
+      setOwnerName("");
       setPhone("");
       setNotes("");
+      setTaglia("Media");
+      setPelo("Corto");
 
       await loadAvailability(dateISO);
     } catch {
@@ -189,88 +210,132 @@ export default function FastBookingForm() {
     card: {
       borderRadius: 18,
       border: "1px solid rgba(255,255,255,0.16)",
-      background:
-        `radial-gradient(700px 260px at 20% 0%, ${rgba(gold, 0.16)}, transparent 62%),` +
-        `linear-gradient(180deg, rgba(11,28,68,0.72), rgba(11,28,68,0.45))`,
+      background: "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06))",
       padding: 16,
       boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
     },
-    title: { fontSize: 22, fontWeight: 900, margin: 0, color: "rgba(255,255,255,0.92)" },
-    subtitle: { marginTop: 4, marginBottom: 14, color: "rgba(255,255,255,0.75)" },
+    title: {
+      fontSize: 22,
+      fontWeight: 950,
+      margin: 0,
+      color: "rgba(255,255,255,0.94)",
+      letterSpacing: -0.2,
+      textShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    },
+    subtitle: { marginTop: 6, marginBottom: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.45 },
     grid: { display: "grid", gap: 12 },
-    label: { fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.86)" },
+    label: { fontSize: 13, fontWeight: 950, color: "rgba(255,255,255,0.92)" },
+
+    // più leggibile (sfondo chiaro ma non bianco)
     input: {
       width: "100%",
       padding: "12px 12px",
       borderRadius: 14,
-      border: "1px solid rgba(255,255,255,0.16)",
-      background: "rgba(0,0,0,0.20)",
-      color: "rgba(255,255,255,0.92)",
+      border: "1px solid rgba(255,255,255,0.20)",
+      background: "rgba(255,255,255,0.10)",
+      color: "rgba(255,255,255,0.95)",
       outline: "none",
       fontSize: 15,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
     },
+    helper: { marginTop: 6, color: "rgba(255,255,255,0.78)", fontSize: 12, lineHeight: 1.35 },
+
     row2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
 
+    chip: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 10px",
+      borderRadius: 999,
+      border: `1px solid ${rgba(accent, 0.30)}`,
+      background: `${rgba(accent, 0.12)}`,
+      fontWeight: 900,
+      fontSize: 12,
+      color: "rgba(255,255,255,0.92)",
+    },
+
+    // ✅ bottone ORO
     btn: {
       width: "100%",
+      border: "1px solid rgba(255,255,255,0.16)",
       borderRadius: 16,
       padding: "14px 14px",
-      fontWeight: 1000,
+      fontWeight: 950,
       cursor: "pointer",
-      border: `1px solid ${rgba(gold, 0.45)}`,
       color: "#0A0F1A",
-      background: `linear-gradient(90deg, ${rgba(gold, 0.98)} 0%, ${rgba(gold, 0.70)} 65%, rgba(255,255,255,0.14) 140%)`,
-      boxShadow: `0 18px 46px ${rgba(gold, 0.16)}`,
+      background: `linear-gradient(90deg, ${rgba(gold, 0.98)} 0%, ${rgba(gold, 0.72)} 60%, rgba(255,255,255,0.14) 140%)`,
+      boxShadow: `0 18px 46px ${rgba(gold, 0.18)}`,
+      letterSpacing: 0.2,
+    },
+    btnDisabled: {
+      filter: "grayscale(0.25) brightness(0.92)",
+      opacity: 0.85,
+      cursor: "not-allowed",
     },
 
     msgOk: {
       marginTop: 10,
       padding: "10px 12px",
       borderRadius: 12,
-      background: "rgba(0, 200, 120, 0.16)",
+      background: "rgba(34,197,94,0.16)",
       border: "1px solid rgba(255,255,255,0.16)",
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 13,
-      fontWeight: 700,
+      fontWeight: 850,
     },
     msgWarn: {
       marginTop: 10,
       padding: "10px 12px",
       borderRadius: 12,
-      background: `linear-gradient(90deg, ${rgba(red, 0.18)}, rgba(255,190,0,0.14))`,
+      background: "rgba(255, 190, 0, 0.16)",
       border: "1px solid rgba(255,255,255,0.16)",
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 13,
-      fontWeight: 700,
+      fontWeight: 850,
     },
     msgErr: {
       marginTop: 10,
       padding: "10px 12px",
       borderRadius: 12,
-      background: "rgba(255, 59, 59, 0.16)",
+      background: `${rgba(danger, 0.18)}`,
       border: "1px solid rgba(255,255,255,0.16)",
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 13,
-      fontWeight: 700,
+      fontWeight: 850,
     },
-    helper: { marginTop: 6, color: "rgba(255,255,255,0.70)", fontSize: 12 },
   };
 
   return (
     <section style={styles.card}>
-      <h2 style={styles.title}>Prenota adesso ✅</h2>
-      <div style={styles.subtitle}>
-        Scegli una data: ti mostriamo solo gli orari disponibili. Se trovi pieno, cambia data.
+      <h2 style={styles.title}>Prenota adesso 🐾</h2>
+      <div style={styles.subtitle}>Scegli una data: ti mostriamo solo gli orari disponibili. Se trovi pieno, cambia data.</div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={styles.chip}>📍 {biz?.city ?? "Teramo (TE)"}</div>
+        <div style={styles.chip}>🧼 Toelettatura</div>
       </div>
 
       <form onSubmit={onSubmit} style={styles.grid}>
         <div>
-          <div style={styles.label}>Nome *</div>
+          <div style={styles.label}>Nome del cane *</div>
+          <input
+            style={styles.input}
+            placeholder="Es. Luna"
+            value={dogName}
+            onChange={(e) => setDogName(e.target.value)}
+            autoComplete="off"
+          />
+          <div style={styles.helper}>Serve per riconoscere subito l’appuntamento.</div>
+        </div>
+
+        <div>
+          <div style={styles.label}>Nome del padrone *</div>
           <input
             style={styles.input}
             placeholder="Es. Marco"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
             autoComplete="name"
           />
         </div>
@@ -287,11 +352,31 @@ export default function FastBookingForm() {
           />
         </div>
 
-        <div style={styles.row2} className="fb-row2">
+        <div className="mm-row2" style={styles.row2}>
+          <div>
+            <div style={styles.label}>Taglia *</div>
+            <select style={styles.input} value={taglia} onChange={(e) => setTaglia(e.target.value as any)}>
+              <option value="Piccola">Piccola</option>
+              <option value="Media">Media</option>
+              <option value="Grande">Grande</option>
+            </select>
+          </div>
+
+          <div>
+            <div style={styles.label}>Pelo *</div>
+            <select style={styles.input} value={pelo} onChange={(e) => setPelo(e.target.value as any)}>
+              <option value="Corto">Corto</option>
+              <option value="Medio">Medio</option>
+              <option value="Lungo">Lungo</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mm-row2" style={styles.row2}>
           <div>
             <div style={styles.label}>Servizio *</div>
             <select style={styles.input} value={service} onChange={(e) => setService(e.target.value)}>
-              {servicesList.map((s) => (
+              {SERVICES.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -308,8 +393,6 @@ export default function FastBookingForm() {
               onChange={(e) => {
                 const v = e.target.value;
                 setDateISO(v);
-                setResultMsg("");
-                setResultType("");
                 loadAvailability(v);
               }}
               min={todayISO}
@@ -318,7 +401,7 @@ export default function FastBookingForm() {
           </div>
         </div>
 
-        <div style={styles.row2} className="fb-row2">
+        <div className="mm-row2" style={styles.row2}>
           <div>
             <div style={styles.label}>Ora disponibile *</div>
             <select
@@ -346,19 +429,20 @@ export default function FastBookingForm() {
             <div style={styles.label}>Note (facoltative)</div>
             <input
               style={styles.input}
-              placeholder="Es. Preferisco mattina / taglio + barba / ecc."
+              placeholder="Es. nodi, sensibile al phon, ecc."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
+            <div style={styles.helper}>Esempio: “nodi”, “sensibile al phon”, “taglio corto”.</div>
           </div>
         </div>
 
         <button
           type="submit"
-          style={{ ...styles.btn, opacity: submitting ? 0.75 : 1 }}
+          style={{ ...styles.btn, ...(submitting ? styles.btnDisabled : {}) }}
           disabled={submitting}
         >
-          {submitting ? "Invio in corso…" : "✂️ Conferma prenotazione"}
+          {submitting ? "Invio in corso…" : "Conferma prenotazione 🐾"}
         </button>
 
         {resultMsg ? (
@@ -368,12 +452,9 @@ export default function FastBookingForm() {
         ) : null}
       </form>
 
-      {/* ✅ Mobile: le 2 colonne diventano 1 */}
       <style>{`
-        @media (max-width: 560px) {
-          .fb-row2 {
-            grid-template-columns: 1fr !important;
-          }
+        @media (max-width: 760px) {
+          .mm-row2 { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </section>

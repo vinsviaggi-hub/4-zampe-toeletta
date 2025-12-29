@@ -14,8 +14,8 @@ type AdminRow = {
 
   nome?: string;
   telefono?: string;
-  servizio?: string;
 
+  servizio?: string;
   dataISO?: string; // yyyy-mm-dd
   ora?: string; // HH:mm
 
@@ -44,20 +44,6 @@ function normStatus(s?: string): BookingStatus {
 
 function safeTel(t?: string) {
   return String(t || "").replace(/[^\d]/g, "");
-}
-
-// ✅ normalizza numero per WhatsApp (aggiunge 39 se serve)
-function normalizeWaPhone(raw?: string) {
-  const p = safeTel(raw);
-  if (!p) return "";
-
-  // 0039... -> 39...
-  if (p.startsWith("00")) return p.slice(2);
-
-  // IT senza prefisso (10 cifre) -> 39 + numero
-  if (p.length === 10 && !p.startsWith("39")) return `39${p}`;
-
-  return p;
 }
 
 function toITDate(iso?: string) {
@@ -146,10 +132,10 @@ export default function PannelloAdmin() {
   const head = biz?.headline ?? biz?.title ?? "";
   const panelTitle = head ? `Prenotazioni • ${head}` : "Prenotazioni";
 
-  // accent usato per dettagli UI (non nomi)
+  // Accento usato solo per dettagli UI
   const accent = biz?.theme?.accent || "#2563EB";
 
-  // ✅ NOME: scuro e leggibile (non oro)
+  // ✅ NOME: scuro e leggibile
   function nameBadgeStyle(): CSSProperties {
     return {
       display: "inline-flex",
@@ -176,7 +162,6 @@ export default function PannelloAdmin() {
         ? `linear-gradient(180deg, ${rgba(accent, 0.75)}, ${rgba(accent, 0.16)})`
         : "linear-gradient(180deg, rgba(239,68,68,0.72), rgba(239,68,68,0.14))",
     };
-
     return { bar };
   }
 
@@ -196,9 +181,9 @@ export default function PannelloAdmin() {
     };
   }
 
-  // ✅ url sempre diverso (t=...) → riduce riuso “bozza” WhatsApp
+  // ✅ URL sempre diverso (t=...) → riduce riuso “bozza” WhatsApp
   function waLink(phone: string, text: string) {
-    const p = normalizeWaPhone(phone);
+    const p = safeTel(phone);
     const msg = encodeURIComponent(text);
     const t = Date.now();
     return `https://api.whatsapp.com/send?phone=${p}&text=${msg}&t=${t}`;
@@ -377,15 +362,15 @@ export default function PannelloAdmin() {
     }
   };
 
-  // ✅ FIX pagina bianca: niente window.open → uso stesso tab
   function openWhatsApp(phone: string, message: string) {
-    const p = normalizeWaPhone(phone);
+    const p = safeTel(phone);
     if (!p) {
       showToast("err", "Telefono mancante: non posso aprire WhatsApp.");
       return;
     }
     const url = waLink(p, message);
-    window.location.href = url;
+    // ✅ nuova tab ogni volta → evita “riuso bozza”
+    window.open(url, `wa_${Date.now()}`, "noopener,noreferrer");
   }
 
   const confirmWhatsApp = (r: AdminRow) => {
@@ -569,7 +554,7 @@ export default function PannelloAdmin() {
 
     list: { display: "grid", gap: 14 },
 
-    // ✅ card più “staccate”
+    // ✅ card più “staccate” + bordo netto
     card: {
       borderRadius: 16,
       background: "rgba(255,255,255,0.98)",
@@ -705,9 +690,7 @@ export default function PannelloAdmin() {
         <div style={styles.panel}>
           <div style={styles.panelHeader}>
             <div style={styles.panelTitle}>{loggedIn ? "Prenotazioni" : "Accesso"}</div>
-            <div style={{ opacity: 0.85, fontSize: 12 }}>
-              {loggedIn ? "Conferma/Annulla → apre WhatsApp con messaggio pronto" : ""}
-            </div>
+            <div style={{ opacity: 0.85, fontSize: 12 }}>{loggedIn ? "Conferma/Annulla → apre WhatsApp con messaggio pronto" : ""}</div>
           </div>
 
           <div style={styles.body}>
@@ -744,12 +727,7 @@ export default function PannelloAdmin() {
 
                       {dayMode === "DATA" && (
                         <input
-                          style={{
-                            width: 170,
-                            padding: "12px 12px",
-                            borderRadius: 12,
-                            border: "1px solid rgba(15,23,42,0.14)",
-                          }}
+                          style={{ width: 170, padding: "12px 12px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.14)" }}
                           type="date"
                           value={pickDate}
                           onChange={(e) => setPickDate(e.target.value)}

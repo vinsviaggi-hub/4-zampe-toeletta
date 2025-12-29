@@ -1,102 +1,152 @@
+// app/pannello/login/LoginClient.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getBusinessConfig } from "@/app/config/business";
 import styles from "./login.module.css";
+
+type LoginOk = { ok: true; message?: string };
+type LoginErr = { ok: false; error?: string; details?: any };
+type LoginResponse = LoginOk | LoginErr;
+
+async function safeJson(res: Response) {
+  const text = await res.text().catch(() => "");
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: "Risposta non valida dal server.", details: text };
+  }
+}
 
 export default function LoginClient() {
   const router = useRouter();
+
+  const biz = useMemo(() => {
+    try {
+      return getBusinessConfig() as any;
+    } catch {
+      return {} as any;
+    }
+  }, []);
+
+  const badgeTop = biz?.badgeTop ?? biz?.labelTop ?? "GALAXBOT AI • ADMIN";
+  const head = biz?.headline ?? biz?.title ?? "";
+  const panelTitle = head ? `Accesso • ${head}` : "Accesso pannello";
+
   const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMsg("");
+    setMsg(null);
 
-    const p = password.trim();
-    if (!p) {
-      setMsg("Inserisci la password.");
+    const pw = password.trim();
+    if (!pw) {
+      setMsg({ type: "err", text: "Inserisci la password admin." });
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
     try {
-      const r = await fetch("/api/admin/login", {
+      const res = await fetch("/api/admin/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: p }),
+        body: JSON.stringify({ password: pw }),
       });
 
-      const data = await r.json().catch(() => null);
+      const data = (await safeJson(res)) as LoginResponse;
 
-      if (!r.ok || data?.ok === false || data?.error) {
-        setMsg(data?.error || "Login fallito.");
+      if (!(data as any)?.ok) {
+        setMsg({ type: "err", text: (data as any)?.error || "Accesso fallito." });
+        setSubmitting(false);
         return;
       }
 
-      router.push("/pannello");
+      setMsg({ type: "ok", text: "Accesso effettuato. Ti porto al pannello…" });
+
+      // pulizia
+      setPassword("");
+
+      // vai al pannello
+      router.replace("/pannello");
       router.refresh();
     } catch {
-      setMsg("Errore rete. Riprova.");
+      setMsg({ type: "err", text: "Errore di rete. Riprova." });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
-  }
+  };
 
   return (
-    <div className={styles.wrap}>
-      <div className={styles.card}>
-        <div className={styles.brandRow}>
-          <div className={styles.logoDot} aria-hidden />
-          <div>
-            <div className={styles.brand}>Pala Pizza</div>
-            <div className={styles.sub}>Pannello ordini</div>
+    <div className={styles.page}>
+      <div className={styles.shell}>
+        <div className={styles.header}>
+          <div className={styles.headerInner}>
+            <div className={styles.badge}>{badgeTop}</div>
+            <h1 className={styles.h1}>{panelTitle}</h1>
+            <p className={styles.sub}>
+              Inserisci la password admin per aprire il pannello prenotazioni.
+            </p>
           </div>
         </div>
 
-        <h1 className={styles.title}>Login</h1>
+        <div className={styles.panel}>
+          <div className={styles.panelHead}>
+            <div className={styles.panelTitle}>Login</div>
+            <div style={{ opacity: 0.78, fontSize: 12 }}>
+              Sessione sicura (cookie httpOnly)
+            </div>
+          </div>
 
-        <form onSubmit={onSubmit} className={styles.form} autoComplete="off">
-          <input
-            type="text"
-            name="username"
-            autoComplete="username"
-            tabIndex={-1}
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: "-9999px",
-              width: 1,
-              height: 1,
-              opacity: 0,
-            }}
-          />
+          <div className={styles.panelBody}>
+            <form onSubmit={onSubmit} className={styles.grid}>
+              <div>
+                <div className={styles.label}>Password admin</div>
+                <input
+                  className={styles.input}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+                <div className={styles.hint}>
+                  Suggerimento: salvala in un password manager. Non inviarla in chat a clienti.
+                </div>
+              </div>
 
-          <label className={styles.label} htmlFor="adminPassword">
-            Password
-          </label>
+              <div className={styles.actions}>
+                <button
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? "Accesso…" : "Entra nel pannello"}
+                </button>
 
-          <input
-            id="adminPassword"
-            name="password"
-            className={styles.input}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            autoComplete="current-password"
-            autoCorrect="off"
-            autoCapitalize="none"
-            spellCheck={false}
-          />
+                <button
+                  className={`${styles.btn} ${styles.btnDanger}`}
+                  type="button"
+                  onClick={() => {
+                    setPassword("");
+                    setMsg(null);
+                  }}
+                  disabled={submitting}
+                >
+                  Pulisci
+                </button>
+              </div>
 
-          {msg ? <div className={styles.error}>{msg}</div> : null}
+              {msg?.type === "ok" ? <div className={styles.msgOk}>{msg.text}</div> : null}
+              {msg?.type === "err" ? <div className={styles.msgErr}>{msg.text}</div> : null}
+            </form>
+          </div>
+        </div>
 
-          <button className={styles.button} type="submit" disabled={loading}>
-            {loading ? "Accesso..." : "Entra"}
-          </button>
-        </form>
+        <div className={styles.footer}>GalaxBot AI • Pannello Admin</div>
       </div>
     </div>
   );

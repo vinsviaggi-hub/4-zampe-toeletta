@@ -1,237 +1,249 @@
+// app/components/CancelBookingForm.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { getBusinessConfig } from "@/app/config/business";
 
-type ApiOk = { ok: true; message?: string };
-type ApiErr = { ok: false; error?: string; conflict?: boolean; _status?: number };
+type CancelOk = { ok: true; message?: string };
+type CancelErr = { ok: false; error: string; details?: any };
+type CancelResponse = CancelOk | CancelErr;
 
-const SERVICES = [
-  "Taglio uomo",
-  "Barba",
-  "Taglio + barba",
-  "Sfumatura",
-  "Styling",
-  "Bimbi",
-];
+function toISODate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function prettyDate(iso: string) {
+  if (!iso || iso.length !== 10) return iso;
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function hexToRgb(hex?: string) {
+  const h = String(hex || "").replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return { r, g, b };
+}
+
+function rgba(hex: string, a: number) {
+  const c = hexToRgb(hex);
+  if (!c) return `rgba(239,68,68,${a})`; // fallback rosso
+  return `rgba(${c.r},${c.g},${c.b},${a})`;
+}
 
 export default function CancelBookingForm() {
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState(""); // non serve allo script, ma lo teniamo per chiarezza UI
-  const [service, setService] = useState(""); // idem
-  const [date, setDate] = useState<string>(""); // YYYY-MM-DD
-  const [time, setTime] = useState<string>(""); // HH:mm
-
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string>("");
-  const [err, setErr] = useState<string>("");
-
-  // default: oggi
-  useEffect(() => {
-    const today = new Date();
-    const iso = today.toISOString().slice(0, 10);
-    setDate(iso);
+  const biz = useMemo(() => {
+    try {
+      return getBusinessConfig() as any;
+    } catch {
+      return {} as any;
+    }
   }, []);
 
-  const canSubmit = useMemo(() => {
-    return phone.trim().length >= 4 && date && time;
-  }, [phone, date, time]);
+  const todayISO = useMemo(() => toISODate(new Date()), []);
+
+  const [phone, setPhone] = useState("");
+  const [dateISO, setDateISO] = useState(todayISO);
+  const [time, setTime] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const [resultMsg, setResultMsg] = useState("");
+  const [resultType, setResultType] = useState<"ok" | "warn" | "err" | "">("");
+
+  // Tema (se presente)
+  const danger = biz?.theme?.danger || "#EF4444";
+  const bgCard = "linear-gradient(180deg, rgba(11,28,68,0.72), rgba(11,28,68,0.45))";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMsg("");
-    setErr("");
+    setResultMsg("");
+    setResultType("");
 
-    if (!canSubmit) {
-      setErr("Compila telefono, data e ora.");
+    const p = phone.trim();
+    const d = dateISO.trim();
+    const t = time.trim();
+
+    if (!p || !d || !t) {
+      setResultType("warn");
+      setResultMsg("Compila i campi obbligatori: telefono, data e ora.");
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "cancel_booking",
-          phone: phone.trim(),
-          // lo script vuole ISO: YYYY-MM-DD
-          date,
-          // lo script vuole HH:mm
-          time,
-          // name/service sono solo UI (non fanno danni)
-          name: name.trim(),
-          service: service.trim(),
+          phone: p,
+          date: d,
+          time: t,
         }),
       });
 
-      const data = (await res.json()) as ApiOk | ApiErr;
+      const data = (await res.json().catch(() => null)) as CancelResponse | null;
 
-      if (!data || (data as any).ok !== true) {
-        // Se vedi "conflict" qui, significa che STAI ANCORA chiamando create_booking da qualche parte
-        const d = data as ApiErr;
-
-        if (d?.conflict || res.status === 409) {
-          setErr(
-            "Stai tentando di CREARE una prenotazione (409). L'annullo sta chiamando l’azione sbagliata: controlla che l’azione sia 'cancel_booking'."
-          );
-          return;
-        }
-
-        setErr(d?.error || "Errore annullo. Controlla i dati (telefono, data, ora).");
+      if (!data || typeof data !== "object" || !("ok" in data)) {
+        setResultType("err");
+        setResultMsg("Risposta non valida dal server (cancel).");
         return;
       }
 
-      setMsg((data as ApiOk).message || "Prenotazione annullata.");
-    } catch (e: any) {
-      setErr(e?.message || "Errore rete.");
+      if (!data.ok) {
+        setResultType("err");
+        setResultMsg(data.error || "Errore durante l’annullamento.");
+        return;
+      }
+
+      setResultType("ok");
+      setResultMsg(data.message || "✅ Prenotazione annullata correttamente.");
+
+      // reset leggero
+      setPhone("");
+      setTime("");
+    } catch {
+      setResultType("err");
+      setResultMsg("Errore di rete (cancel).");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
+  const styles: Record<string, React.CSSProperties> = {
+    card: {
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.16)",
+      background: bgCard,
+      padding: 16,
+      boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+    },
+    title: { fontSize: 22, fontWeight: 900, margin: 0, color: "rgba(255,255,255,0.92)" },
+    subtitle: { marginTop: 4, marginBottom: 14, color: "rgba(255,255,255,0.75)" },
+    grid: { display: "grid", gap: 12 },
+    label: { fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.86)" },
+    input: {
+      width: "100%",
+      padding: "12px 12px",
+      borderRadius: 14,
+      border: "1px solid rgba(255,255,255,0.16)",
+      background: "rgba(0,0,0,0.20)",
+      color: "rgba(255,255,255,0.92)",
+      outline: "none",
+      fontSize: 15,
+    },
+    row2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+    btn: {
+      width: "100%",
+      border: "0",
+      borderRadius: 16,
+      padding: "14px 14px",
+      fontWeight: 950,
+      cursor: "pointer",
+      color: "#0A0F1A",
+      background: `linear-gradient(90deg, ${rgba(danger, 0.95)} 0%, ${rgba(danger, 0.68)} 120%)`,
+      boxShadow: `0 14px 30px ${rgba(danger, 0.18)}`,
+    },
+    msgOk: {
+      marginTop: 10,
+      padding: "10px 12px",
+      borderRadius: 12,
+      background: "rgba(0, 200, 120, 0.16)",
+      border: "1px solid rgba(255,255,255,0.16)",
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 13,
+      fontWeight: 800,
+    },
+    msgWarn: {
+      marginTop: 10,
+      padding: "10px 12px",
+      borderRadius: 12,
+      background: "rgba(255, 190, 0, 0.16)",
+      border: "1px solid rgba(255,255,255,0.16)",
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 13,
+      fontWeight: 800,
+    },
+    msgErr: {
+      marginTop: 10,
+      padding: "10px 12px",
+      borderRadius: 12,
+      background: "rgba(255, 59, 59, 0.16)",
+      border: "1px solid rgba(255,255,255,0.16)",
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 13,
+      fontWeight: 800,
+    },
+    helper: { marginTop: 6, color: "rgba(255,255,255,0.70)", fontSize: 12 },
+  };
+
   return (
-    <section style={styles.wrap}>
-      <div style={styles.card}>
-        <div style={styles.headerRow}>
-          <h2 style={styles.title}>Annulla prenotazione</h2>
-          <span style={styles.x}>✕</span>
+    <section style={styles.card}>
+      <h2 style={styles.title}>Annulla prenotazione ✖️</h2>
+      <div style={styles.subtitle}>
+        Inserisci <b>telefono</b> + <b>data</b> + <b>ora</b> della prenotazione.
+      </div>
+
+      <form onSubmit={onSubmit} style={styles.grid}>
+        <div>
+          <div style={styles.label}>Telefono *</div>
+          <input
+            style={styles.input}
+            placeholder="Es. 333 123 4567"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            autoComplete="tel"
+            inputMode="tel"
+          />
         </div>
 
-        <p style={styles.sub}>
-          Non puoi più venire? Inserisci i dati dell’appuntamento da annullare.
-          <br />
-          <b>Importante:</b> usa lo <b>stesso telefono</b> usato in prenotazione e seleziona <b>data + ora identiche</b>.
-        </p>
-
-        {msg ? <div style={{ ...styles.alert, ...styles.alertOk }}>{msg}</div> : null}
-        {err ? <div style={{ ...styles.alert, ...styles.alertErr }}>{err}</div> : null}
-
-        <form onSubmit={onSubmit} style={styles.form}>
-          <label style={styles.label}>
-            Telefono <span style={styles.req}>*</span>
+        <div style={styles.row2}>
+          <div>
+            <div style={styles.label}>Data *</div>
             <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Es. 3331234567"
               style={styles.input}
-              inputMode="tel"
-              autoComplete="tel"
+              type="date"
+              value={dateISO}
+              onChange={(e) => setDateISO(e.target.value)}
+              min={todayISO}
             />
-            <small style={styles.help}>Metti lo stesso numero usato per prenotare (anche senza spazi).</small>
-          </label>
-
-          <div style={styles.grid2}>
-            <label style={styles.label}>
-              Nome (facoltativo)
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Es. Marco"
-                style={styles.input}
-                autoComplete="name"
-              />
-            </label>
-
-            <label style={styles.label}>
-              Servizio (facoltativo)
-              <select value={service} onChange={(e) => setService(e.target.value)} style={styles.input}>
-                <option value="">—</option>
-                {SERVICES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div style={styles.helper}>Selezionata: {prettyDate(dateISO)}</div>
           </div>
 
-          <div style={styles.grid2}>
-            <label style={styles.label}>
-              Data <span style={styles.req}>*</span>
-              {/* type="date" => manda già YYYY-MM-DD */}
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                style={styles.input}
-              />
-            </label>
-
-            <label style={styles.label}>
-              Ora prenotata <span style={styles.req}>*</span>
-              {/* time => HH:mm */}
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                style={styles.input}
-              />
-            </label>
+          <div>
+            <div style={styles.label}>Ora (HH:mm) *</div>
+            <input
+              style={styles.input}
+              placeholder="Es. 15:30"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              inputMode="numeric"
+            />
+            <div style={styles.helper}>Scrivi es: 08:30 / 15:00</div>
           </div>
+        </div>
 
-          <button type="submit" disabled={!canSubmit || loading} style={styles.btn}>
-            {loading ? "Annullamento..." : "Annulla prenotazione"}
-          </button>
+        <button type="submit" style={styles.btn} disabled={submitting}>
+          {submitting ? "Annullamento…" : "Annulla prenotazione"}
+        </button>
 
-          <div style={styles.note}>
-            Se ti dice “prenotazione non trovata”, quasi sempre è perché <b>telefono</b> o <b>data/ora</b> non coincidono
-            con quelle salvate.
+        {resultMsg ? (
+          <div style={resultType === "ok" ? styles.msgOk : resultType === "warn" ? styles.msgWarn : styles.msgErr}>
+            {resultMsg}
           </div>
-        </form>
-      </div>
+        ) : null}
+      </form>
+
+      <style>{`
+        @media (max-width: 520px) {
+          .row2 { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrap: { width: "100%", display: "flex", justifyContent: "center" },
-  card: {
-    width: "100%",
-    maxWidth: 860,
-    borderRadius: 18,
-    padding: 18,
-    background: "rgba(10, 25, 60, 0.55)",
-    border: "1px solid rgba(255,255,255,0.18)",
-    boxShadow: "0 18px 60px rgba(0,0,0,0.35)",
-    color: "rgba(255,255,255,0.92)",
-  },
-  headerRow: { display: "flex", alignItems: "center", justifyContent: "space-between" },
-  title: { margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: 0.2 },
-  x: { opacity: 0.65, fontWeight: 800 },
-  sub: { marginTop: 8, marginBottom: 14, opacity: 0.9, lineHeight: 1.35 },
-  form: { display: "grid", gap: 12 },
-  label: { display: "grid", gap: 6, fontWeight: 700 },
-  req: { color: "rgba(255,90,90,0.95)" },
-  input: {
-    width: "100%",
-    borderRadius: 14,
-    padding: "12px 14px",
-    border: "1px solid rgba(255,255,255,0.20)",
-    background: "rgba(255,255,255,0.08)",
-    color: "rgba(255,255,255,0.95)",
-    outline: "none",
-    fontSize: 16,
-  },
-  help: { opacity: 0.75, fontWeight: 500 },
-  grid2: { display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" },
-  btn: {
-    width: "100%",
-    borderRadius: 14,
-    padding: "14px 16px",
-    border: "none",
-    fontWeight: 900,
-    fontSize: 16,
-    cursor: "pointer",
-    background: "linear-gradient(90deg, rgba(255,60,60,0.95), rgba(255,180,100,0.95))",
-    color: "rgba(255,255,255,0.95)",
-  },
-  alert: {
-    borderRadius: 14,
-    padding: "12px 14px",
-    border: "1px solid rgba(255,255,255,0.18)",
-    fontWeight: 700,
-  },
-  alertOk: { background: "rgba(0,200,120,0.14)" },
-  alertErr: { background: "rgba(255,60,60,0.14)" },
-  note: { opacity: 0.85, fontSize: 13, textAlign: "center", marginTop: 4 },
-};

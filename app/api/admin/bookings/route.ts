@@ -1,7 +1,6 @@
 // app/api/admin/bookings/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { getCookieName, verifySessionToken } from "@/lib/adminAuth";
+import { getCookieName } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,148 +13,123 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
-async function requireAdminAuth() {
-  const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "";
-  if (!ADMIN_SESSION_SECRET) {
-    return {
-      ok: false as const,
-      res: jsonNoStore({ ok: false, error: "ADMIN_SESSION_SECRET mancante" }, { status: 500 }),
-    };
-  }
-
-  const cookieStore = await cookies();
-  const token = cookieStore.get(getCookieName())?.value || "";
-
-  if (!verifySessionToken(token, ADMIN_SESSION_SECRET)) {
-    return {
-      ok: false as const,
-      res: jsonNoStore({ ok: false, error: "Non autorizzato" }, { status: 401 }),
-    };
-  }
-
-  return { ok: true as const };
+function getEnv(name: string) {
+  return (process.env[name] ?? "").trim();
 }
 
-async function getScriptBase() {
-  const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL || process.env.BOOKING_WEBAPP_URL || "";
-  const GOOGLE_SCRIPT_SECRET = process.env.GOOGLE_SCRIPT_SECRET || "";
-  return { GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_SECRET };
+function isLoggedIn(req: Request) {
+  const cookieName = getCookieName();
+  const cookie = req.headers.get("cookie") || "";
+  const m = cookie.match(new RegExp(`${cookieName}=([^;]+)`));
+  const sessionValue = m?.[1] ? decodeURIComponent(m[1]) : "";
+  const expected = getEnv("ADMIN_SESSION_SECRET");
+  return Boolean(expected && sessionValue && sessionValue === expected);
 }
 
-async function safeJsonFromResponse(r: Response) {
-  const text = await r.text().catch(() => "");
+async function safeJson(res: Response) {
+  const text = await res.text().catch(() => "");
   try {
-    return { ok: true as const, data: JSON.parse(text), raw: text };
+    return JSON.parse(text);
   } catch {
-    return { ok: false as const, error: "Risposta non JSON dal Google Script", raw: text };
+    return { ok: false, error: "Risposta non valida dal server.", details: text };
   }
 }
 
-/** ===========================
- *  GET /api/admin/bookings
- *  =========================== */
+async function callGoogleScript(payload: Record<string, any>) {
+  const url = getEnv("GOOGLE_SCRIPT_URL");
+  const secret = getEnv("GOOGLE_SCRIPT_SECRET");
+
+  if (!url) return { data: { ok: false, error: "GOOGLE_SCRIPT_URL mancante in env." }, httpStatus: 500 };
+  if (!secret) return { data: { ok: false, error: "GOOGLE_SCRIPT_SECRET mancante in env." }, httpStatus: 500 };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({ ...payload, secret }),
+    });
+
+    const data = await safeJson(res);
+
+    // nello script Apps Script mettiamo _status nel payload
+    const statusFromPayload = Number((data as any)?._status);
+    const httpStatus = Number.isFinite(statusFromPayload) ? statusFromPayload : res.status;
+
+    return { data, httpStatus };
+  } catch (e: any) {
+    const msg =
+      e?.name === "AbortError"
+        ? "Timeout chiamata Google Script."
+        : `Errore chiamata Google Script: ${String(e?.message || e)}`;
+    return { data: { ok: false, error: msg }, httpStatus: 500 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function clampInt(n: number, min: number, max: number) {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(Math.max(Math.floor(n), min), max);
+}
+
 export async function GET(req: Request) {
   try {
-    const auth = await requireAdminAuth();
-    if (!auth.ok) return auth.res;
-
-    const { GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_SECRET } = await getScriptBase();
-    if (!GOOGLE_SCRIPT_URL) {
-      return jsonNoStore({ ok: false, error: "GOOGLE_SCRIPT_URL mancante" }, { status: 500 });
-    }
+    if (!isLoggedIn(req)) return jsonNoStore({ ok: false, error: "Non autorizzato." }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(Math.max(Number(searchParams.get("limit") || 300), 1), 800);
+    const limit = clampInt(Number(searchParams.get("limit") || "300"), 1, 1000);
 
-    // ✅ azione admin per lista prenotazioni
-    const url =
-      `${GOOGLE_SCRIPT_URL}?action=admin_list&limit=${encodeURIComponent(String(limit))}` +
-      (GOOGLE_SCRIPT_SECRET ? `&secret=${encodeURIComponent(GOOGLE_SCRIPT_SECRET)}` : "");
+    const { data, httpStatus } = await callGoogleScript({
+      action: "admin_list",
+      limit,
+    });
 
-    const r = await fetch(url, { method: "GET", cache: "no-store" });
-
-    const parsed = await safeJsonFromResponse(r);
-    if (!parsed.ok) {
-      return jsonNoStore({ ok: false, error: parsed.error, details: parsed.raw }, { status: 502 });
-    }
-
-    const data: any = parsed.data;
-
-    if (!r.ok || data?.ok === false) {
+    if (!data?.ok) {
       return jsonNoStore(
-        { ok: false, error: data?.error || `Errore admin_list (${r.status})`, details: data ?? parsed.raw },
-        { status: 502 }
+        { ok: false, error: data?.error || "Errore admin_list.", details: data?.details },
+        { status: Number(httpStatus) || 500 }
       );
     }
 
-    return jsonNoStore({ ok: true, rows: data.rows || [], count: data.count || 0 });
+    return jsonNoStore({ ok: true, rows: data.rows ?? [], count: data.count ?? (data.rows?.length ?? 0) }, { status: 200 });
   } catch (err: any) {
-    return jsonNoStore(
-      { ok: false, error: "Errore server /api/admin/bookings", details: err?.message ?? String(err) },
-      { status: 500 }
-    );
+    return jsonNoStore({ ok: false, error: `Errore interno: ${String(err?.message || err)}` }, { status: 500 });
   }
 }
-
-/** ===========================
- *  POST /api/admin/bookings
- *  body: { id, status }
- *  =========================== */
-type Body = { id?: string; status?: string };
-
-const ALLOWED = new Set(["NUOVA", "CONFERMATA", "ANNULLATA"]);
 
 export async function POST(req: Request) {
   try {
-    const auth = await requireAdminAuth();
-    if (!auth.ok) return auth.res;
+    if (!isLoggedIn(req)) return jsonNoStore({ ok: false, error: "Non autorizzato." }, { status: 401 });
 
-    const { GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_SECRET } = await getScriptBase();
-    if (!GOOGLE_SCRIPT_URL) {
-      return jsonNoStore({ ok: false, error: "GOOGLE_SCRIPT_URL mancante" }, { status: 500 });
-    }
-
-    const body = (await req.json().catch(() => null)) as Body | null;
+    const body = await req.json().catch(() => null);
     const id = String(body?.id || "").trim();
     const status = String(body?.status || "").trim().toUpperCase();
 
-    if (!id) return jsonNoStore({ ok: false, error: "Manca id" }, { status: 400 });
-    if (!ALLOWED.has(status)) return jsonNoStore({ ok: false, error: "Status non valido" }, { status: 400 });
-
-    // ✅ azione admin per cambio stato
-    // IMPORTANT: mando sia "status" che "stato" per compatibilità
-    const r = await fetch(GOOGLE_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "admin_set_status",
-        id,
-        status,
-        stato: status,
-        secret: GOOGLE_SCRIPT_SECRET || undefined,
-      }),
-      cache: "no-store",
-    });
-
-    const parsed = await safeJsonFromResponse(r);
-    if (!parsed.ok) {
-      return jsonNoStore({ ok: false, error: parsed.error, details: parsed.raw }, { status: 502 });
+    if (!id) return jsonNoStore({ ok: false, error: "ID mancante." }, { status: 400 });
+    if (!["NUOVA", "CONFERMATA", "ANNULLATA"].includes(status)) {
+      return jsonNoStore({ ok: false, error: "Status non valido. Usa: NUOVA / CONFERMATA / ANNULLATA" }, { status: 400 });
     }
 
-    const data: any = parsed.data;
+    const { data, httpStatus } = await callGoogleScript({
+      action: "admin_set_status",
+      id,
+      status,
+    });
 
-    if (!r.ok || data?.ok === false) {
+    if (!data?.ok) {
       return jsonNoStore(
-        { ok: false, error: data?.error || `Errore admin_set_status (${r.status})`, details: data ?? parsed.raw },
-        { status: 502 }
+        { ok: false, error: data?.error || "Errore admin_set_status.", details: data?.details },
+        { status: Number(httpStatus) || 500 }
       );
     }
 
-    return jsonNoStore({ ok: true, status, message: "Stato aggiornato" });
+    return jsonNoStore({ ok: true, status: data.status ?? status, message: data.message ?? "Stato aggiornato." }, { status: 200 });
   } catch (err: any) {
-    return jsonNoStore(
-      { ok: false, error: "Errore server /api/admin/bookings (POST)", details: err?.message ?? String(err) },
-      { status: 500 }
-    );
+    return jsonNoStore({ ok: false, error: `Errore interno: ${String(err?.message || err)}` }, { status: 500 });
   }
 }

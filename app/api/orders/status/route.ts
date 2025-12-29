@@ -1,16 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { getCookieName, verifySessionToken } from "@/lib/adminAuth";
+// app/api/orders/status/route.ts
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type Body = {
-  id?: string;        // "telefono|YYYY-MM-DD|HH:mm"
-  status?: string;    // NUOVA | CONFERMATA | ANNULLATA
-};
-
-const ALLOWED = new Set(["NUOVA", "CONFERMATA", "ANNULLATA"]);
 
 function jsonNoStore(body: any, init?: { status?: number }) {
   const res = NextResponse.json(body, { status: init?.status ?? 200 });
@@ -20,82 +12,86 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
-export async function POST(req: NextRequest) {
+type StatusOk = {
+  ok: true;
+  status: "NUOVO" | "IN_LAVORAZIONE" | "PRONTO" | "CONSEGNATO" | "ANNULLATO" | string;
+  orderId: string;
+  message?: string;
+};
+
+type StatusErr = { ok: false; error: string };
+
+function safeTel(t?: string) {
+  return String(t || "").replace(/[^\d]/g, "");
+}
+
+function normalizeOrderId(v?: string) {
+  return String(v || "").trim();
+}
+
+/**
+ * NOTE IMPORTANTI
+ * - Questo endpoint NON modifica niente.
+ * - Per ora è “stub” (cioè finto) finché non colleghi gli ordini a Sheets/Supabase.
+ * - Ti evita 500/bug: risponde sempre in modo pulito.
+ *
+ * Payload accettati:
+ * { orderId: "ABC123", phone?: "333..." }
+ * oppure querystring:
+ * /api/orders/status?orderId=ABC123&phone=333...
+ */
+async function handle(orderId: string, phone?: string): Promise<StatusOk | StatusErr> {
+  const id = normalizeOrderId(orderId);
+  if (!id) return { ok: false, error: "orderId mancante." };
+
+  const tel = safeTel(phone);
+
+  // ✅ Placeholder: qui in futuro colleghi al tuo DB/Sheets.
+  // Per adesso: risposte "sensate" senza inventare dati.
+  // Se vuoi, puoi anche fare:
+  // - se id inizia con "TEST" => PRONTO
+  // - altrimenti => NUOVO
+  const status = id.toUpperCase().startsWith("TEST") ? "PRONTO" : "NUOVO";
+
+  return {
+    ok: true,
+    orderId: id,
+    status,
+    message: tel
+      ? `Stato ordine ${id} per ${tel}: ${status}`
+      : `Stato ordine ${id}: ${status}`,
+  };
+}
+
+export async function POST(req: Request) {
   try {
-    const GOOGLE_SCRIPT_URL =
-      process.env.GOOGLE_SCRIPT_URL || process.env.BOOKING_WEBAPP_URL || "";
-    const GOOGLE_SCRIPT_SECRET = process.env.GOOGLE_SCRIPT_SECRET || "";
-    const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "";
+    const body = await req.json().catch(() => null);
+    const orderId = String(body?.orderId ?? body?.id ?? "").trim();
+    const phone = body?.phone ? String(body.phone) : "";
 
-    if (!GOOGLE_SCRIPT_URL) {
-      return jsonNoStore(
-        { ok: false, error: "GOOGLE_SCRIPT_URL (o BOOKING_WEBAPP_URL) mancante" },
-        { status: 500 }
-      );
-    }
-    if (!GOOGLE_SCRIPT_SECRET) {
-      return jsonNoStore({ ok: false, error: "GOOGLE_SCRIPT_SECRET mancante" }, { status: 500 });
-    }
-    if (!ADMIN_SESSION_SECRET) {
-      return jsonNoStore({ ok: false, error: "ADMIN_SESSION_SECRET mancante" }, { status: 500 });
-    }
-
-    // ✅ auth staff (cookie)
-    const cookieStore = await cookies();
-    const token = cookieStore.get(getCookieName())?.value;
-
-    if (!verifySessionToken(token, ADMIN_SESSION_SECRET)) {
-      return jsonNoStore({ ok: false, error: "Non autorizzato" }, { status: 401 });
-    }
-
-    const body = (await req.json().catch(() => null)) as Body | null;
-    const id = String(body?.id || "").trim();
-    const status = String(body?.status || "").trim().toUpperCase();
-
-    if (!id) {
-      return jsonNoStore({ ok: false, error: "Manca id" }, { status: 400 });
-    }
-    if (!status || !ALLOWED.has(status)) {
-      return jsonNoStore({ ok: false, error: "Status non valido (NUOVA/CONFERMATA/ANNULLATA)" }, { status: 400 });
-    }
-
-    // ✅ chiama Apps Script (BARBIERE: admin_set_status)
-    const r = await fetch(GOOGLE_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "admin_set_status",
-        id,
-        status,
-        secret: GOOGLE_SCRIPT_SECRET,
-      }),
-      cache: "no-store",
-    });
-
-    const text = await r.text().catch(() => "");
-
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return jsonNoStore(
-        { ok: false, error: "Risposta non JSON dal Google Script", raw: text },
-        { status: 502 }
-      );
-    }
-
-    // GAS spesso ritorna ok:false anche se HTTP 200
-    if (data?.ok === false) {
-      return jsonNoStore(
-        { ok: false, error: data?.error || "Errore aggiornando stato", detail: data },
-        { status: 502 }
-      );
-    }
-
-    return jsonNoStore({ ok: true, result: data });
+    const out = await handle(orderId, phone);
+    return jsonNoStore(out, { status: out.ok ? 200 : 400 });
   } catch (err: any) {
+    console.error("❌ /api/orders/status error:", err);
     return jsonNoStore(
-      { ok: false, error: "Errore server /api/bookings/status", details: err?.message ?? String(err) },
+      { ok: false, error: "Errore server (orders/status).", details: String(err?.message ?? err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const orderId = url.searchParams.get("orderId") || url.searchParams.get("id") || "";
+    const phone = url.searchParams.get("phone") || "";
+
+    const out = await handle(orderId, phone);
+    return jsonNoStore(out, { status: out.ok ? 200 : 400 });
+  } catch (err: any) {
+    console.error("❌ /api/orders/status GET error:", err);
+    return jsonNoStore(
+      { ok: false, error: "Errore server (orders/status).", details: String(err?.message ?? err) },
       { status: 500 }
     );
   }

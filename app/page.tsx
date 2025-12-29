@@ -17,7 +17,7 @@ function hexToRgb(hex?: string) {
 }
 function rgba(hex: string, a: number) {
   const c = hexToRgb(hex);
-  if (!c) return `rgba(212,175,55,${a})`;
+  if (!c) return `rgba(34,197,94,${a})`;
   return `rgba(${c.r},${c.g},${c.b},${a})`;
 }
 
@@ -30,20 +30,30 @@ export default function HomePage() {
     }
   }, []);
 
-  // ✅ usa i campi corretti del business.ts
-  const brandTop = biz?.badgeTop ?? "GALAXBOT AI · BARBER SHOP";
-  const title = biz?.headline ?? "Idee per la Testa 💈";
+  // ✅ business config
+  const brandTop = biz?.badgeTop ?? "GALAXBOT AI · PET GROOMING";
+  const title = biz?.headline ?? "4 Zampe";
   const subtitle =
     biz?.subheadline ??
-    "Un assistente virtuale che gestisce richieste, prenotazioni e cancellazioni per il tuo barber shop, 24 ore su 24.";
+    "Prenotazioni e assistenza per toelettatura e benessere, in modo semplice e veloce.";
 
-  const services = biz?.servicesShort ?? "Taglio, barba, sfumature, styling, bimbi";
-  const city = biz?.city ?? "Castelnuovo Vomano (TE)";
+  const services = biz?.servicesShort ?? "Bagno, tosatura, unghie, pulizia orecchie";
+  const city = biz?.city ?? "Teramo";
   const phone = biz?.phone ?? "333 123 4567";
 
   const openHoursTitle = biz?.hoursTitle ?? "Orari di apertura";
   const openHoursLines: string[] =
-    biz?.hoursLines ?? ["Lunedì–Sabato: 8:30–12:30 e 15:00–20:00", "Domenica: chiuso"];
+    biz?.hoursLines ?? ["Lunedì–Sabato: 08:00–13:00 e 15:00–19:00", "Domenica: chiuso"];
+
+  const cta = biz?.cta ?? {};
+  const heroEmoji = biz?.heroEmoji ?? "🐾";
+  const footerText = biz?.footerText ?? "Powered by GalaxBot AI";
+
+  // ✅ theme (più armonioso, non nero)
+  const primary = biz?.theme?.primary || "#22C55E"; // verde “pet”
+  const accent = biz?.theme?.accent || "#38BDF8"; // azzurro “clean”
+  const danger = biz?.theme?.danger || "#EF4444"; // rosso annulla
+  const bgTop = biz?.theme?.background || "#0B1220";
 
   const [showHelp, setShowHelp] = useState(false);
 
@@ -54,22 +64,16 @@ export default function HomePage() {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // 🎨 Barber theme
-  const gold = biz?.theme?.primary || "#D4AF37";
-  const red = biz?.theme?.danger || "#EF4444";
-  const deep = "#070A0F";
-  const slate = "#0B1220";
-
   const styles: Record<string, React.CSSProperties> = {
     page: {
       minHeight: "100vh",
-      background:
-        `radial-gradient(900px 600px at 18% 10%, ${rgba(gold, 0.22)}, transparent 58%),` +
-        `radial-gradient(900px 600px at 82% 18%, ${rgba(red, 0.14)}, transparent 58%),` +
-        "radial-gradient(900px 600px at 50% 120%, rgba(255,255,255,0.06), transparent 62%)," +
-        `linear-gradient(180deg, ${deep} 0%, ${slate} 60%, ${deep} 100%)`,
-      color: "rgba(255,255,255,0.92)",
       padding: "26px 14px 40px",
+      color: "rgba(255,255,255,0.92)",
+      background:
+        `radial-gradient(900px 600px at 14% 8%, ${rgba(primary, 0.22)}, transparent 58%),` +
+        `radial-gradient(900px 600px at 86% 16%, ${rgba(accent, 0.18)}, transparent 58%),` +
+        "radial-gradient(900px 600px at 50% 120%, rgba(255,255,255,0.10), transparent 62%)," +
+        `linear-gradient(180deg, ${bgTop} 0%, #102A3C 55%, #0B1B2A 100%)`,
     },
     shell: { maxWidth: 980, margin: "0 auto" },
 
@@ -79,13 +83,13 @@ export default function HomePage() {
       gap: 10,
       padding: "7px 12px",
       borderRadius: 999,
-      background: "rgba(255,255,255,0.06)",
-      border: `1px solid ${rgba(gold, 0.22)}`,
+      background: "rgba(255,255,255,0.08)",
+      border: `1px solid rgba(255,255,255,0.14)`,
       backdropFilter: "blur(10px)",
       fontSize: 12,
       letterSpacing: 0.9,
       textTransform: "uppercase",
-      boxShadow: `0 10px 30px ${rgba(gold, 0.08)}`,
+      boxShadow: `0 12px 34px rgba(0,0,0,0.28)`,
     },
 
     hero: { marginTop: 12, padding: "14px 2px 10px" },
@@ -95,12 +99,12 @@ export default function HomePage() {
       margin: "8px 0 10px",
       fontWeight: 900,
       letterSpacing: -0.6,
-      textShadow: `0 14px 50px rgba(0,0,0,0.55), 0 0 24px ${rgba(gold, 0.10)}`,
+      textShadow: `0 14px 50px rgba(0,0,0,0.55)`,
     },
     subtitle: {
       fontSize: 16,
       lineHeight: 1.5,
-      opacity: 0.9,
+      opacity: 0.92,
       maxWidth: 760,
       marginBottom: 14,
       color: "rgba(255,255,255,0.86)",
@@ -114,24 +118,24 @@ export default function HomePage() {
       fontWeight: 900,
       fontSize: 14,
       color: "rgba(255,255,255,0.95)",
-      background: "rgba(255,255,255,0.08)",
-      border: "1px solid rgba(255,255,255,0.14)",
+      background: "rgba(255,255,255,0.10)",
+      border: "1px solid rgba(255,255,255,0.16)",
     },
 
-    // ✅ PRENOTA = ORO
-    btnGold: {
-      background: `linear-gradient(90deg, ${rgba(gold, 0.98)} 0%, ${rgba(gold, 0.70)} 60%, rgba(255,255,255,0.16) 140%)`,
-      color: "#0A0F1A",
-      border: `1px solid ${rgba(gold, 0.44)}`,
-      boxShadow: `0 18px 46px ${rgba(gold, 0.16)}`,
+    // ✅ PRENOTA = primary armonioso (verde)
+    btnPrimary: {
+      background: `linear-gradient(90deg, ${rgba(primary, 0.95)} 0%, ${rgba(primary, 0.65)} 120%)`,
+      color: "#071218",
+      border: `1px solid ${rgba(primary, 0.38)}`,
+      boxShadow: `0 18px 46px ${rgba(primary, 0.16)}`,
     },
 
-    // ✅ ANNULLA = ROSSO
-    btnRed: {
-      background: `linear-gradient(90deg, ${rgba(red, 0.95)} 0%, ${rgba(red, 0.65)} 120%)`,
-      color: "#0A0F1A",
-      border: `1px solid ${rgba(red, 0.38)}`,
-      boxShadow: `0 18px 46px ${rgba(red, 0.10)}`,
+    // ✅ ANNULLA = rosso
+    btnDanger: {
+      background: `linear-gradient(90deg, ${rgba(danger, 0.95)} 0%, ${rgba(danger, 0.62)} 120%)`,
+      color: "#071218",
+      border: `1px solid ${rgba(danger, 0.38)}`,
+      boxShadow: `0 18px 46px ${rgba(danger, 0.12)}`,
     },
 
     smallHint: { marginTop: 10, fontSize: 13, opacity: 0.86 },
@@ -140,9 +144,9 @@ export default function HomePage() {
 
     card: {
       borderRadius: 18,
-      background: "linear-gradient(180deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.06) 100%)",
-      border: `1px solid rgba(255,255,255,0.12)`,
-      boxShadow: `0 22px 70px rgba(0,0,0,0.38), 0 14px 44px ${rgba(gold, 0.06)}`,
+      background: "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.07) 100%)",
+      border: "1px solid rgba(255,255,255,0.14)",
+      boxShadow: "0 22px 70px rgba(0,0,0,0.34)",
       overflow: "hidden",
     },
     cardInner: { padding: "16px 16px 14px" },
@@ -156,7 +160,7 @@ export default function HomePage() {
       gap: 10,
       letterSpacing: 0.2,
     },
-    cardSub: { marginTop: 6, fontSize: 13, opacity: 0.86, lineHeight: 1.45 },
+    cardSub: { marginTop: 6, fontSize: 13, opacity: 0.88, lineHeight: 1.45 },
     list: { marginTop: 10, marginBottom: 0, paddingLeft: 18, lineHeight: 1.6 },
     divider: { height: 1, background: "rgba(255,255,255,0.10)" },
 
@@ -167,7 +171,7 @@ export default function HomePage() {
       gap: 10,
     },
 
-    // ✅ APRI CHAT = ORO
+    // ✅ APRI CHAT = primary (non oro da barbiere)
     helpBtn: {
       cursor: "pointer",
       padding: "10px 14px",
@@ -176,10 +180,28 @@ export default function HomePage() {
       fontSize: 14,
       border: "0",
       background: showHelp
-        ? "rgba(255,255,255,0.10)"
-        : `linear-gradient(90deg, ${rgba(gold, 0.98)} 0%, ${rgba(gold, 0.70)} 120%)`,
-      color: showHelp ? "rgba(255,255,255,0.95)" : "#0A0F1A",
-      boxShadow: showHelp ? "none" : `0 18px 46px ${rgba(gold, 0.14)}`,
+        ? "rgba(255,255,255,0.12)"
+        : `linear-gradient(90deg, ${rgba(primary, 0.95)} 0%, ${rgba(primary, 0.65)} 120%)`,
+      color: showHelp ? "rgba(255,255,255,0.95)" : "#071218",
+      boxShadow: showHelp ? "none" : `0 18px 46px ${rgba(primary, 0.14)}`,
+    },
+
+    heroRule: {
+      marginTop: 14,
+      height: 1,
+      width: "100%",
+      background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.24) 20%, rgba(255,255,255,0.10) 70%, transparent 100%)`,
+    },
+
+    warnBox: {
+      marginTop: 10,
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.16)",
+      background: "rgba(0,0,0,0.18)",
+      color: "rgba(255,255,255,0.88)",
+      fontSize: 13,
+      lineHeight: 1.45,
     },
 
     footer: {
@@ -188,13 +210,6 @@ export default function HomePage() {
       opacity: 0.72,
       fontSize: 12,
       padding: "10px 0 2px",
-    },
-
-    heroRule: {
-      marginTop: 14,
-      height: 1,
-      width: "100%",
-      background: `linear-gradient(90deg, transparent 0%, ${rgba(gold, 0.55)} 20%, ${rgba(gold, 0.10)} 70%, transparent 100%)`,
     },
   };
 
@@ -207,26 +222,33 @@ export default function HomePage() {
 
         <header style={styles.hero}>
           <h1 style={styles.h1}>
-            {title} <span aria-hidden>💈</span>
+            {title} <span aria-hidden>{heroEmoji}</span>
           </h1>
           <p style={styles.subtitle}>{subtitle}</p>
 
           <div style={styles.actionsRow}>
-            <button style={{ ...styles.btn, ...styles.btnGold }} onClick={() => scrollTo(refBook)}>
-              Prenota ora
+            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => scrollTo(refBook)}>
+              {cta.book ?? "Prenota ora"}
             </button>
 
-            <button style={{ ...styles.btn, ...styles.btnRed }} onClick={() => scrollTo(refCancel)}>
-              Annulla
+            <button style={{ ...styles.btn, ...styles.btnDanger }} onClick={() => scrollTo(refCancel)}>
+              {cta.cancel ?? "Annulla"}
             </button>
 
             <button style={styles.btn} onClick={() => setShowHelp((v) => !v)}>
-              {showHelp ? "Chiudi assistenza" : "Assistenza"}
+              {showHelp ? "Chiudi assistenza" : cta.help ?? "Assistenza"}
             </button>
           </div>
 
           <div style={styles.smallHint}>
             Prenoti in pochi secondi: scegli data + ora disponibile. Se ti serve, annulli con gli stessi dati.
+          </div>
+
+          {/* ✅ Nota importante: il “nome del cane” NON va qui.
+              Va dentro FastBookingForm + CancelBookingForm + Sheets/Script.
+              Qui mostriamo solo che sarà richiesto in prenotazione. */}
+          <div style={styles.warnBox}>
+            ✅ In prenotazione verrà richiesto anche il <b>nome del cane</b> (oltre ai dati del padrone).
           </div>
 
           <div style={styles.heroRule} />
@@ -272,15 +294,16 @@ export default function HomePage() {
               <div style={styles.helpTop}>
                 <div>
                   <h2 style={styles.cardTitle}>
-                    Assistenza <span aria-hidden>💬</span>
+                    {biz?.helpCardTitle ?? "Assistenza"} <span aria-hidden>💬</span>
                   </h2>
                   <div style={styles.cardSub}>
-                    Domande su servizi, orari o info generali. Per prenotare usa sempre il box “Prenota adesso”.
+                    {biz?.helpCardSubtitle ??
+                      "Domande su servizi, orari o info generali. Per prenotare usa sempre il box “Prenota adesso”."}
                   </div>
                 </div>
 
                 <button style={styles.helpBtn} onClick={() => setShowHelp((v) => !v)}>
-                  {showHelp ? "Nascondi" : "Apri chat"}
+                  {showHelp ? cta.closeChat ?? "Nascondi" : cta.openChat ?? "Apri chat"}
                 </button>
               </div>
             </div>
@@ -295,7 +318,7 @@ export default function HomePage() {
             ) : (
               <div style={{ ...styles.cardInner, paddingTop: 0 }}>
                 <div style={{ ...styles.cardSub, marginTop: 0 }}>
-                  Premi <b>“Apri chat”</b> se ti serve aiuto.
+                  Premi <b>{cta.openChat ?? "Apri chat"}</b> se ti serve aiuto.
                 </div>
               </div>
             )}
@@ -311,6 +334,7 @@ export default function HomePage() {
             </div>
             <div style={styles.divider} />
             <div style={styles.cardInner}>
+              {/* ✅ Il “nome del cane” va aggiunto dentro questo componente */}
               <FastBookingForm />
             </div>
           </div>
@@ -325,12 +349,13 @@ export default function HomePage() {
             </div>
             <div style={styles.divider} />
             <div style={styles.cardInner}>
+              {/* ✅ Se vuoi annullare anche per “nome cane”, va aggiunto anche qui */}
               <CancelBookingForm />
             </div>
           </div>
         </section>
 
-        <footer style={styles.footer}>Powered by GalaxBot AI</footer>
+        <footer style={styles.footer}>{footerText}</footer>
       </div>
 
       {/* ✅ Mobile: bottoni comodi + titolo che scala */}

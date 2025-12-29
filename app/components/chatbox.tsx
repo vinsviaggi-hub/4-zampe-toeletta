@@ -1,99 +1,216 @@
+// app/components/chatbox.tsx
 "use client";
 
-import React, { useMemo, useState, type FormEvent } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./chatbox.module.css";
+import { getBusinessConfig } from "@/app/config/business";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type ChatRole = "user" | "assistant";
+
+type ChatMsg = {
+  role: ChatRole;
+  content: string;
+  ts: number;
+};
+
+type ChatApiOk = { ok: true; reply: string };
+type ChatApiErr = { ok: false; error?: string };
+type ChatApiResp = ChatApiOk | ChatApiErr;
+
+function safeNow() {
+  return Date.now();
+}
 
 export default function ChatBox() {
-  const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: "assistant",
-      content:
-        "Ciao! 💈 Sono l’assistente del barber shop.\n\nPuoi chiedermi info su servizi, orari e disponibilità.\n\n⚠️ Per prenotare usa sempre il box “Prenotazione veloce” sotto la chat.",
-    },
+  const biz = useMemo(() => {
+    try {
+      return getBusinessConfig() as any;
+    } catch {
+      return {} as any;
+    }
+  }, []);
+
+  const headerTitle = biz?.helpCardTitle ?? "Assistenza";
+  const headerBadge = biz?.badgeTop ?? biz?.labelTop ?? "GALAXBOT AI";
+
+  const greeting =
+    biz?.bot?.greeting ??
+    "Ciao! Dimmi pure cosa ti serve 😊\nPosso aiutarti con orari, servizi e info generali.";
+
+  const [messages, setMessages] = useState<ChatMsg[]>(() => [
+    { role: "assistant", content: greeting, ts: safeNow() },
   ]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [hint, setHint] = useState<string>("");
 
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+  const scrollToBottom = () => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  };
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
+  useEffect(() => {
+    scrollToBottom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
-    setInput("");
-    const next = [...messages, { role: "user", content: text } as Msg];
-    setMessages(next);
-    setLoading(true);
+  useEffect(() => {
+    return () => {
+      // cleanup: se cambi pagina mentre sta rispondendo
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  async function sendMessage() {
+    const content = text.trim();
+    if (!content || sending) return;
+
+    setHint("");
+    setSending(true);
+
+    const userMsg: ChatMsg = { role: "user", content, ts: safeNow() };
+    setMessages((prev) => [...prev, userMsg]);
+    setText("");
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
     try {
-      const r = await fetch("/api/chat", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ message: text }),
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          message: content,
+          // contesto utile lato server (se lo usi)
+          business: {
+            slug: biz?.slug,
+            headline: biz?.headline,
+            badgeTop: biz?.badgeTop,
+            servicesShort: biz?.servicesShort,
+            city: biz?.city,
+            phone: biz?.phone,
+            hoursTitle: biz?.hoursTitle,
+            hoursLines: biz?.hoursLines,
+          },
+        }),
       });
 
-      const data = await r.json().catch(() => null);
+      const data = (await res.json().catch(() => null)) as ChatApiResp | null;
 
-      const answer =
-        (data && (data.reply || data.message || data.text)) ||
-        (r.ok ? "Ok." : "Errore: risposta non valida.");
+      if (!data || typeof data !== "object" || !("ok" in data)) {
+        setHint("Risposta non valida dal server.");
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Mi dispiace, ho avuto un problema tecnico. Riprova tra poco.",
+            ts: safeNow(),
+          },
+        ]);
+        return;
+      }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: String(answer) }]);
-    } catch {
+      if (!data.ok) {
+        setHint(data.error || "Errore chat.");
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Mi dispiace, al momento non riesco a rispondere. Riprova tra poco.",
+            ts: safeNow(),
+          },
+        ]);
+        return;
+      }
+
+      const reply = String((data as any).reply ?? "").trim() || "Ok ✅";
+      setMessages((prev) => [...prev, { role: "assistant", content: reply, ts: safeNow() }]);
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      setHint("Errore di rete.");
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Errore di rete. Riprova tra poco." },
+        {
+          role: "assistant",
+          content: "Sembra ci sia un problema di connessione. Riprova tra poco.",
+          ts: safeNow(),
+        },
       ]);
     } finally {
-      setLoading(false);
+      setSending(false);
+      abortRef.current = null;
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") sendMessage();
+  }
+
+  function formatTime(ts: number) {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return "";
     }
   }
 
   return (
-    <section className={styles.wrap}>
+    <div className={styles.chatWrap}>
       <div className={styles.header}>
-        <div className={styles.badge}>💬 Chat assistente virtuale</div>
-        <div className={styles.sub}>
-          Fai una domanda su servizi, orari o disponibilità. Per fissare un appuntamento usa sempre il
-          box prenotazione sotto la chat.
+        <div className={styles.title}>
+          💬 {headerTitle}
+          <span className={styles.badge}>{headerBadge}</span>
         </div>
       </div>
 
-      <div className={styles.box} aria-live="polite">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`${styles.msg} ${m.role === "user" ? styles.user : styles.assistant}`}
-          >
-            <div className={styles.bubble}>
-              {m.content.split("\n").map((line, idx) => (
-                <p key={idx} className={styles.line}>
-                  {line}
-                </p>
-              ))}
+      <div className={styles.body}>
+        <div className={styles.messages} ref={listRef}>
+          {messages.map((m) => (
+            <div
+              key={m.ts}
+              className={`${styles.row} ${m.role === "user" ? styles.rowUser : styles.rowBot}`}
+            >
+              <div
+                className={`${styles.bubble} ${
+                  m.role === "user" ? styles.userBubble : styles.botBubble
+                }`}
+              >
+                {m.content}
+                <div
+                  className={`${styles.meta} ${
+                    m.role === "user" ? styles.metaUser : styles.metaBot
+                  }`}
+                >
+                  {m.role === "user" ? "Tu" : "Assistente"} • {formatTime(m.ts)}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
 
-        <form className={styles.form} onSubmit={onSubmit}>
+        <div className={styles.composer}>
           <input
             className={styles.input}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Scrivi qui il tuo messaggio..."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={sending ? "Sto rispondendo…" : "Scrivi un messaggio…"}
+            disabled={sending}
             autoComplete="off"
-            inputMode="text"
           />
-          <button className={styles.button} type="submit" disabled={!canSend}>
-            {loading ? "..." : "Invia"}
+          <button className={styles.sendBtn} onClick={sendMessage} disabled={sending || !text.trim()}>
+            {sending ? "Invio…" : "Invia"}
           </button>
-        </form>
+        </div>
+
+        {hint ? <div className={styles.hint}>{hint}</div> : null}
       </div>
-    </section>
+    </div>
   );
 }

@@ -1,7 +1,6 @@
 // app/api/admin/me/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { getCookieName, verifySessionToken } from "@/lib/adminAuth";
+import { getCookieName } from "@/lib/adminAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,21 +13,34 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
-export async function GET() {
+function getEnv(name: string) {
+  return (process.env[name] ?? "").trim();
+}
+
+export async function GET(req: Request) {
   try {
-    const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "";
-    if (!ADMIN_SESSION_SECRET) {
-      return jsonNoStore({ ok: true, loggedIn: false });
-    }
+    const cookieName = getCookieName();
+    const cookie = req.headers.get("cookie") || "";
+    const m = cookie.match(new RegExp(`${cookieName}=([^;]+)`));
+    const sessionValue = m?.[1] ? decodeURIComponent(m[1]) : "";
 
-    const cookieStore = await cookies();
-    const token = cookieStore.get(getCookieName())?.value || "";
-    const loggedIn = verifySessionToken(token, ADMIN_SESSION_SECRET);
+    const expected = getEnv("ADMIN_SESSION_SECRET");
 
-    return jsonNoStore({ ok: true, loggedIn });
+    // supporto compat: alcuni file controllano loggedIn, altri isLoggedIn/authenticated
+    const loggedIn = Boolean(expected && sessionValue && sessionValue === expected);
+
+    return jsonNoStore(
+      {
+        ok: true,
+        loggedIn,
+        isLoggedIn: loggedIn,
+        authenticated: loggedIn,
+      },
+      { status: 200 }
+    );
   } catch (err: any) {
     return jsonNoStore(
-      { ok: false, error: "Errore server /api/admin/me", details: err?.message ?? String(err) },
+      { ok: false, error: `Errore interno: ${String(err?.message || err)}` },
       { status: 500 }
     );
   }

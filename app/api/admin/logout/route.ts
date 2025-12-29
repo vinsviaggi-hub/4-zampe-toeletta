@@ -13,28 +13,20 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
-function clearCookie(res: NextResponse) {
-  res.cookies.set(getCookieName(), "", {
+export async function POST() {
+  const res = jsonNoStore({ ok: true, loggedOut: true });
+
+  // elimina cookie sessione
+  const cookieName = getCookieName();
+  res.cookies.set({
+    name: cookieName,
+    value: "",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 0,
-    expires: new Date(0),
   });
+
   return res;
-}
-
-export async function POST() {
-  const res = jsonNoStore({ ok: true });
-  return clearCookie(res);
-}
-
-export async function GET(req: Request) {
-  // ✅ dopo logout vai sempre al login NUOVO
-  const res = NextResponse.redirect(new URL("/pannello/login", req.url));
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  return clearCookie(res);
 }

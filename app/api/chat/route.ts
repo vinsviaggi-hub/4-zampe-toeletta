@@ -1,5 +1,7 @@
+// app/api/chat/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getBusinessConfig } from "@/app/config/business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,71 +14,138 @@ function jsonNoStore(body: any, init?: { status?: number }) {
   return res;
 }
 
-// ✅ DATI BARBIERE (poi li modifichiamo quando ci dirà i dettagli)
-const SHOP_NAME = "Idee per la Testa";
-const SHOP_CITY = "Castelnuovo Vomano (TE)";
-const SHOP_PHONE = "333 123 4567";
-const SHOP_SERVICES = "taglio, barba, sfumature, styling, bimbi";
-const SHOP_HOURS = "Lun–Sab: 8:30–12:30 e 15:00–20:00 | Dom: chiuso";
+const apiKey = (process.env.OPENAI_API_KEY || "").trim();
 
-function systemPrompt() {
+// inizializzo comunque, ma se manca la key rispondo con fallback
+const client = new OpenAI({ apiKey: apiKey || "missing" });
+
+function buildSystemPrompt() {
+  let biz: any = {};
+  try {
+    biz = getBusinessConfig() as any;
+  } catch {
+    biz = {};
+  }
+
+  const name = biz?.headline || biz?.title || "Attività";
+  const city = biz?.city || "";
+  const phone = biz?.phone || "";
+  const servicesShort = biz?.servicesShort || "";
+  const hoursTitle = biz?.hoursTitle || "Orari";
+  const hoursLines: string[] = Array.isArray(biz?.hoursLines) ? biz.hoursLines : [];
+
+  const greeting =
+    biz?.bot?.greeting ||
+    `Ciao! Sono l’assistente di ${name}. Posso darti info su servizi, orari e contatti.`;
+
+  const bookingGuide =
+    biz?.bot?.bookingGuide ||
+    `Per prenotare usa il box “Prenota adesso” nella pagina: scegli data e un orario disponibile.`;
+
+  const cancelGuide =
+    biz?.bot?.cancelGuide ||
+    `Per annullare usa il box “Annulla prenotazione”: inserisci lo stesso telefono e la stessa data+ora della prenotazione.`;
+
+  // Nota importante: NON prenotare in chat
   return `
-Sei l’assistente virtuale del barber shop "${SHOP_NAME}" (${SHOP_CITY}).
-Parla in italiano, tono amichevole e professionale, frasi brevi e chiare.
+Sei un assistente virtuale per ${name}${city ? ` (${city})` : ""}.
+Obiettivo: dare informazioni chiare e veloci su servizi/orari/contatti e indirizzare alla prenotazione.
+Regole IMPORTANTI:
+- NON prendere prenotazioni in chat e NON inventare disponibilità.
+- Se l’utente chiede di prenotare, rispondi: "${bookingGuide}"
+- Se l’utente chiede di annullare, rispondi: "${cancelGuide}"
+- Se chiedono prezzo/durata e non ci sono info certe, spiega che dipende (taglia, tipo pelo, condizioni) e proponi di indicare: taglia, pelo corto/lungo, eventuali nodi, e servizio richiesto.
+- Stile: amichevole, professionale, italiano, massimo 6-8 righe.
 
-REGOLE IMPORTANTI:
-- NON prendere prenotazioni in chat.
-- Se il cliente vuole prenotare: digli SEMPRE di usare il box "Prenotazione veloce" sotto la chat.
-- Non inventare prezzi, sconti o promozioni.
-- Se chiedono disponibilità: spiega che le disponibilità reali si vedono nel box prenotazione selezionando la data.
-- Se chiedono annullamento: spiega di usare la sezione "Annulla prenotazione" nella pagina.
-- Se chiedono cose fuori tema (medicina/legale ecc.), rifiuta gentilmente e reindirizza.
+Dati attività:
+- Nome: ${name}
+- Servizi: ${servicesShort || "—"}
+- Telefono: ${phone || "—"}
+- ${hoursTitle}: ${hoursLines.length ? hoursLines.join(" | ") : "—"}
 
-INFO (solo se richieste):
-- Nome: ${SHOP_NAME}
-- Città: ${SHOP_CITY}
-- Telefono: ${SHOP_PHONE}
-- Servizi: ${SHOP_SERVICES}
-- Orari: ${SHOP_HOURS}
-
-Esempi rapidi:
-- "Voglio prenotare domani" -> "Certo! Usa il box Prenotazione veloce qui sotto e scegli data e orario."
-- "Che orari fate?" -> dai orari e poi invitalo a prenotare col box.
+Messaggio iniziale suggerito: ${greeting}
 `.trim();
+}
+
+function localFallbackAnswer(userText: string) {
+  // fallback se manca OPENAI_API_KEY: risposte "safe" e utili
+  let biz: any = {};
+  try {
+    biz = getBusinessConfig() as any;
+  } catch {
+    biz = {};
+  }
+
+  const name = biz?.headline || biz?.title || "Attività";
+  const phone = biz?.phone || "";
+  const hoursLines: string[] = Array.isArray(biz?.hoursLines) ? biz.hoursLines : [];
+  const servicesShort = biz?.servicesShort || "";
+
+  const t = (userText || "").toLowerCase();
+
+  if (t.includes("prenot") || t.includes("appunt")) {
+    return `Per prenotare con ${name} usa il box “Prenota adesso” nella pagina: scegli data e un orario disponibile. ✅`;
+  }
+  if (t.includes("annull") || t.includes("cancell")) {
+    return `Per annullare usa il box “Annulla prenotazione”: inserisci lo stesso telefono e la stessa data+ora della prenotazione. ❌`;
+  }
+  if (t.includes("orari") || t.includes("apert") || t.includes("chius")) {
+    return hoursLines.length
+      ? `Orari: ${hoursLines.join(" • ")}`
+      : `Dimmi il giorno che ti interessa e ti confermo gli orari.`;
+  }
+  if (t.includes("prezzo") || t.includes("costa") || t.includes("quanto")) {
+    return `I prezzi dipendono dal servizio e dal caso (taglia, tipo pelo, eventuali nodi). Dimmi: servizio + taglia + pelo corto/lungo e ti orientiamo.`;
+  }
+  if (t.includes("servizi") || t.includes("fate") || t.includes("bagno") || t.includes("taglio")) {
+    return servicesShort
+      ? `Servizi principali: ${servicesShort}. Se mi dici che cane hai (taglia/pelo), ti consiglio il trattamento giusto.`
+      : `Dimmi che servizio ti serve (bagno, taglio, unghie…) e che cane hai (taglia/pelo) e ti aiuto.`;
+  }
+  if (t.includes("telefono") || t.includes("contatt")) {
+    return phone ? `Puoi contattarci al: ${phone}` : `Dimmi come preferisci essere contattato e ti dico la soluzione migliore.`;
+  }
+
+  return `Posso aiutarti con info su servizi, orari e contatti. Se vuoi prenotare usa “Prenota adesso” nella pagina.`;
 }
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY || "";
-    if (!apiKey) {
-      return jsonNoStore({ ok: false, error: "OPENAI_API_KEY mancante" }, { status: 500 });
-    }
-
     const body = await req.json().catch(() => null);
-    const userMessage = (body?.message ?? body?.text ?? "").toString().trim();
+    const userMessage = String(body?.message ?? body?.userMessage ?? "").trim();
 
     if (!userMessage) {
-      return jsonNoStore({ ok: false, error: "Messaggio mancante" }, { status: 400 });
+      return jsonNoStore({ ok: false, error: "Messaggio vuoto." }, { status: 400 });
     }
 
-    const client = new OpenAI({ apiKey });
+    // ✅ se non c'è la key, fallback (evita errore 500)
+    if (!apiKey) {
+      return jsonNoStore({ ok: true, reply: localFallbackAnswer(userMessage), fallback: true }, { status: 200 });
+    }
+
+    const systemPrompt = buildSystemPrompt();
 
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.55,
+      model: process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini",
+      temperature: 0.4,
+      max_tokens: 450,
       messages: [
-        { role: "system", content: systemPrompt() },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
       ],
     });
 
-    const reply = completion.choices?.[0]?.message?.content?.trim() || "Ok.";
+    const reply = completion.choices?.[0]?.message?.content?.trim() || "";
 
-    // ✅ ChatBox deve ricevere "reply"
-    return jsonNoStore({ ok: true, reply });
+    if (!reply) {
+      return jsonNoStore({ ok: false, error: "Risposta vuota dal modello." }, { status: 500 });
+    }
+
+    return jsonNoStore({ ok: true, reply }, { status: 200 });
   } catch (err: any) {
+    console.error("❌ /api/chat error:", err);
     return jsonNoStore(
-      { ok: false, error: "Errore server /api/chat", details: err?.message ?? String(err) },
+      { ok: false, error: "Errore server (chat).", details: String(err?.message ?? err) },
       { status: 500 }
     );
   }

@@ -1,120 +1,127 @@
+// app/api/availability/route.ts
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
+function jsonNoStore(body: any, init?: { status?: number }) {
+  const res = NextResponse.json(body, { status: init?.status ?? 200 });
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
 }
 
-function env(name: string) {
-  return (process.env[name] || "").trim();
+function getEnv(name: string) {
+  return (process.env[name] ?? "").trim();
+}
+
+async function safeJson(res: Response) {
+  const text = await res.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text);
+    return parsed;
+  } catch {
+    return {
+      ok: false,
+      error: "Risposta non valida dal Google Script (non JSON).",
+      details: text?.slice?.(0, 800) || text,
+      _status: res.status,
+    };
+  }
+}
+
+async function callGoogleScript(payload: Record<string, any>) {
+  const url = getEnv("GOOGLE_SCRIPT_URL");
+  const secret = getEnv("GOOGLE_SCRIPT_SECRET");
+
+  if (!url) return { data: { ok: false, error: "GOOGLE_SCRIPT_URL mancante in env." }, httpStatus: 500 };
+  if (!secret) return { data: { ok: false, error: "GOOGLE_SCRIPT_SECRET mancante in env." }, httpStatus: 500 };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({ ...payload, secret }),
+    });
+
+    const data = await safeJson(res);
+
+    // Apps Script può restituire _status nel payload
+    const statusFromPayload = Number((data as any)?._status);
+    const httpStatus = Number.isFinite(statusFromPayload) ? statusFromPayload : res.status;
+
+    return { data, httpStatus };
+  } catch (e: any) {
+    const msg =
+      e?.name === "AbortError"
+        ? "Timeout chiamata Google Script."
+        : `Errore chiamata Google Script: ${String(e?.message || e)}`;
+    return { data: { ok: false, error: msg }, httpStatus: 500 };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function isIsoDate(s: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
-async function callGoogleScript(date: string) {
-  const url = env("GOOGLE_SCRIPT_URL");
-  const secret = env("GOOGLE_SCRIPT_SECRET");
+function normalizeDateFromReq(req: Request, bodyDate?: any) {
+  const { searchParams } = new URL(req.url);
+  const fromQuery = String(searchParams.get("date") || "").trim();
+  const fromBody = String(bodyDate || "").trim();
+  return fromBody || fromQuery;
+}
 
-  if (!url) throw new Error("GOOGLE_SCRIPT_URL mancante in .env.local");
-  if (!secret) throw new Error("GOOGLE_SCRIPT_SECRET mancante in .env.local");
+async function handle(req: Request, bodyMaybe?: any) {
+  const date = normalizeDateFromReq(req, bodyMaybe?.date);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // Apps Script router: action + secret + date
-    body: JSON.stringify({
-      action: "get_availability",
-      secret,
-      date,
-    }),
-  });
-
-  const text = await res.text();
-
-  // Se Apps Script risponde HTML (capita quando deploy/permessi non ok), qui lo vedi subito
-  let json: any = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error(
-      "Apps Script non ha restituito JSON. Prima riga risposta: " +
-        text.slice(0, 120)
+  if (!date || !isIsoDate(date)) {
+    return jsonNoStore(
+      { ok: false, error: "Parametro 'date' mancante o non valido (YYYY-MM-DD)." },
+      { status: 400 }
     );
   }
 
-  return json;
-}
+  const { data, httpStatus } = await callGoogleScript({
+    action: "get_availability",
+    date,
+  });
 
-function normalizeFreeSlots(payload: any): string[] {
-  // accetta vari formati possibili
-  const free =
-    payload?.freeSlots ??
-    payload?.slots ??
-    payload?.availableSlots ??
-    payload?.data?.freeSlots;
+  if (!data?.ok) {
+    return jsonNoStore(
+      {
+        ok: false,
+        error: data?.error || "Errore disponibilità.",
+        details: data?.details,
+      },
+      { status: Number(httpStatus) || 500 }
+    );
+  }
 
-  return Array.isArray(free) ? free.map(String) : [];
+  const freeSlots = Array.isArray(data.freeSlots) ? data.freeSlots : [];
+  return jsonNoStore({ ok: true, date, freeSlots }, { status: 200 });
 }
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const date = (searchParams.get("date") || "").trim();
-
-  if (!date) return badRequest("date mancante");
-  if (!isIsoDate(date)) return badRequest("date non valida (usa YYYY-MM-DD)");
-
   try {
-    const data = await callGoogleScript(date);
-
-    // se lo script usa { ok: false, error: ... }
-    if (data?.ok === false) {
-      return NextResponse.json(
-        { ok: false, error: data?.error || "Errore Apps Script" },
-        { status: 502 }
-      );
-    }
-
-    const freeSlots = normalizeFreeSlots(data);
-    return NextResponse.json({ ok: true, freeSlots }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
-      { status: 500 }
-    );
+    return await handle(req);
+  } catch (err: any) {
+    return jsonNoStore({ ok: false, error: `Errore interno: ${String(err?.message || err)}` }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
-  let body: any = null;
   try {
-    body = await req.json();
-  } catch {
-    return badRequest("Body non valido");
-  }
-
-  const date = String(body?.date || "").trim();
-  if (!date) return badRequest("date mancante");
-  if (!isIsoDate(date)) return badRequest("date non valida (usa YYYY-MM-DD)");
-
-  try {
-    const data = await callGoogleScript(date);
-
-    if (data?.ok === false) {
-      return NextResponse.json(
-        { ok: false, error: data?.error || "Errore Apps Script" },
-        { status: 502 }
-      );
-    }
-
-    const freeSlots = normalizeFreeSlots(data);
-    return NextResponse.json({ ok: true, freeSlots }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
-      { status: 500 }
-    );
+    const body = await req.json().catch(() => ({}));
+    return await handle(req, body);
+  } catch (err: any) {
+    return jsonNoStore({ ok: false, error: `Errore interno: ${String(err?.message || err)}` }, { status: 500 });
   }
 }
